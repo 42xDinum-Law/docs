@@ -17,6 +17,21 @@ import {
   searchLawArticles,
 } from './lawArticlesData';
 
+// Formats a `YYYY-MM-DD` law date (eg. "2016-10-01") as a French date (eg.
+// "1 octobre 2016"). Falls back to the raw value if it doesn't parse.
+const formatLawDate = (isoDate: string): string => {
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) {
+    return isoDate;
+  }
+
+  return date.toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+};
+
 const inputStyle = css`
   background-color: transparent;
   border: none;
@@ -116,8 +131,13 @@ export const LawSearchPage = ({
   // article as plain, normally editable text instead of a non-editable
   // chip. In "title" mode the title is inserted linked to its source (when
   // available); in "full" mode the title (bold) and full text are inserted
-  // as "Title : text", with no link.
-  const selectArticle = (article: LawArticleResult, mode: 'title' | 'full') => {
+  // as "Title : text", with no link; in "titleDate" mode the title, its
+  // date and the article text are inserted as a gray callout block, with
+  // the title and date linked to the source.
+  const selectArticle = (
+    article: LawArticleResult,
+    mode: 'title' | 'full' | 'titleDate',
+  ) => {
     if (!isEditable) {
       return;
     }
@@ -137,6 +157,47 @@ export const LawSearchPage = ({
         { type: 'text', text: article.lawTitle, styles: { bold: true } },
         { type: 'text', text: ` : ${article.lawText}`, styles: {} },
       ]);
+      return;
+    }
+
+    if (mode === 'titleDate') {
+      const titleDateContent = [
+        { type: 'text' as const, text: article.lawTitle, styles: { bold: true } },
+        ...(article.lawDate
+          ? [
+              {
+                type: 'text' as const,
+                text: ` (${formatLawDate(article.lawDate)})`,
+                styles: { italic: true, textColor: 'gray' as const },
+              },
+            ]
+          : []),
+      ];
+
+      const titleDateNodes = article.lawSourceUrl
+        ? [
+            {
+              type: 'link' as const,
+              href: article.lawSourceUrl,
+              content: titleDateContent,
+            },
+          ]
+        : titleDateContent;
+
+      (editor as DocsBlockNoteEditor).insertBlocks(
+        [
+          {
+            type: 'callout',
+            props: { backgroundColor: 'gray', emoji: '⚖️' },
+            content: [
+              ...titleDateNodes,
+              { type: 'text', text: `\n${article.lawText}`, styles: {} },
+            ],
+          },
+        ],
+        editor.getTextCursorPosition().block,
+        'after',
+      );
       return;
     }
 
@@ -351,40 +412,54 @@ export const LawSearchPage = ({
                           transition: opacity 0.15s ease;
                         `}
                       >
-                        {(['title', 'full'] as const).map((mode) => (
-                          <Box
-                            key={mode}
-                            as="button"
-                            type="button"
-                            title={
-                              mode === 'title'
-                                ? t('Insert as a linked title')
-                                : t('Insert as full text')
-                            }
-                            aria-label={
-                              mode === 'title'
-                                ? t('Insert as a linked title')
-                                : t('Insert as full text')
-                            }
-                            onClick={() => selectArticle(article, mode)}
-                            $padding="3px"
-                            $css={css`
-                              display: inline-flex;
-                              border: 1px solid
-                                var(--c--contextuals--border--surface--primary);
-                              border-radius: 4px;
-                              cursor: pointer;
-                              background: var(
-                                --c--contextuals--background--surface--primary
-                              );
-                            `}
-                          >
-                            <Icon
-                              iconName={mode === 'title' ? 'link' : 'notes'}
-                              $size="16px"
-                            />
-                          </Box>
-                        ))}
+                        {(['title', 'titleDate', 'full'] as const).map(
+                          (mode) => (
+                            <Box
+                              key={mode}
+                              as="button"
+                              type="button"
+                              title={
+                                mode === 'title'
+                                  ? t('Insert as a linked title')
+                                  : mode === 'full'
+                                    ? t('Insert as full text')
+                                    : t('Insert as a linked title with date')
+                              }
+                              aria-label={
+                                mode === 'title'
+                                  ? t('Insert as a linked title')
+                                  : mode === 'full'
+                                    ? t('Insert as full text')
+                                    : t('Insert as a linked title with date')
+                              }
+                              onClick={() => selectArticle(article, mode)}
+                              $padding="3px"
+                              $css={css`
+                                display: inline-flex;
+                                border: 1px solid
+                                  var(
+                                    --c--contextuals--border--surface--primary
+                                  );
+                                border-radius: 4px;
+                                cursor: pointer;
+                                background: var(
+                                  --c--contextuals--background--surface--primary
+                                );
+                              `}
+                            >
+                              <Icon
+                                iconName={
+                                  mode === 'title'
+                                    ? 'link'
+                                    : mode === 'full'
+                                      ? 'notes'
+                                      : 'crop_square'
+                                }
+                                $size="16px"
+                              />
+                            </Box>
+                          ),
+                        )}
                       </Box>
                     </Box>
                   ))}
