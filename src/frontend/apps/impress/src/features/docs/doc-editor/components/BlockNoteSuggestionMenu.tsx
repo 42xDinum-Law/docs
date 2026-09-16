@@ -25,6 +25,8 @@ import {
   getPdfReactSlashMenuItems,
 } from './custom-blocks';
 import { useGetInterlinkingMenuItems } from './custom-inline-content';
+import { getApiSearchSlashMenuItems } from './custom-inline-content/api_call';
+import { getLawArticleSlashMenuItems } from './custom-inline-content/LawArticle';
 import XLMultiColumn from './xl-multi-column';
 
 const getMultiColumnSlashMenuItems =
@@ -55,6 +57,8 @@ export const BlockNoteSuggestionMenu = ({
 
     const combinedMenu = combineByGroup(
       defaultMenu,
+      getApiSearchSlashMenuItems(editor, t, basicBlocksName),
+      getLawArticleSlashMenuItems(editor, t, basicBlocksName),
       getPageBreakReactSlashMenuItems(editor),
       getMultiColumnSlashMenuItems?.(editor) || [],
       getPdfReactSlashMenuItems(editor, t, fileBlocksName),
