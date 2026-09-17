@@ -180,14 +180,18 @@ class AIDocumentRateThrottle(AIBaseRateThrottle):
 class AIUserRateThrottle(AIBaseRateThrottle):
     """Throttle that limits requests per user or IP with backoff and rate limits."""
 
+    cache_key_suffix = "ai"
+
     def __init__(self, *args, **kwargs):
         super().__init__(settings.AI_USER_RATE_THROTTLE_RATES)
 
     def get_cache_key(self, request, view=None):
         """Generate a cache key based on the user ID or IP for anonymous users."""
         if request.user.is_authenticated:
-            return f"user_{request.user.id!s}_throttle_ai"
-        return f"anonymous_{self.get_ident(request)}_throttle_ai"
+            return f"user_{request.user.id!s}_throttle_{self.cache_key_suffix}"
+        return (
+            f"anonymous_{self.get_ident(request)}_throttle_{self.cache_key_suffix}"
+        )
 
     def get_ident(self, request):
         """Return the request IP address."""
@@ -197,6 +201,22 @@ class AIUserRateThrottle(AIBaseRateThrottle):
             if x_forwarded_for
             else request.META.get("REMOTE_ADDR")
         )
+
+
+class LawSearchRateThrottle(AIUserRateThrottle):
+    """Throttle for law-article search requests, per user or IP.
+
+    Uses its own rates and cache bucket (`LAW_SEARCH_RATE_THROTTLE_RATES`)
+    rather than reusing `AIUserRateThrottle`'s: that one is sized for
+    expensive LLM-generation actions, while law search is a cheap,
+    debounced search-as-you-type lookup that legitimately fires far more
+    often and shouldn't compete with the AI assistant for the same budget.
+    """
+
+    cache_key_suffix = "law_search"
+
+    def __init__(self, *args, **kwargs):
+        AIBaseRateThrottle.__init__(self, settings.LAW_SEARCH_RATE_THROTTLE_RATES)
 
 
 def get_content_metadata_cache_key(document_id):

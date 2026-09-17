@@ -46,7 +46,7 @@ def get_release():
         with open(os.path.join(BASE_DIR, "pyproject.toml"), "rb") as f:
             pyproject_data = tomllib.load(f)
         return pyproject_data["project"]["version"]
-    except FileNotFoundError, KeyError:
+    except (FileNotFoundError, KeyError):
         return "NA"  # Default: not available
 
 
@@ -948,6 +948,35 @@ class Base(Configuration):
         None,
         environ_name="LAW_SEARCH_LEGIFRANCE_COLLECTION_ID",
         environ_prefix=None,
+    )
+    # Search-as-you-type is cheap (no LLM generation) and debounced client-side,
+    # but still fires far more often than the AI assistant actions that
+    # AI_USER_RATE_THROTTLE_RATES is sized for, so it gets its own budget.
+    LAW_SEARCH_RATE_THROTTLE_RATES = {
+        "minute": 30,
+        "hour": 500,
+        "day": 3000,
+    }
+    # Légifrance (PISTE) - used to identify texts (/suggest) and fetch their
+    # canonical content (consult/getArticle) for the law search feature.
+    PISTE_OAUTH_URL = values.Value(
+        "https://sandbox-oauth.piste.gouv.fr/api/oauth/token",
+        environ_name="PISTE_OAUTH_URL",
+        environ_prefix=None,
+    )
+    PISTE_API_URL = values.Value(
+        "https://sandbox-api.piste.gouv.fr/dila/legifrance/lf-engine-app",
+        environ_name="PISTE_API_URL",
+        environ_prefix=None,
+    )
+    PISTE_CLIENT_ID = values.Value(
+        None, environ_name="PISTE_CLIENT_ID", environ_prefix=None
+    )
+    PISTE_CLIENT_SECRET = SecretFileValue(
+        None, environ_name="PISTE_CLIENT_SECRET", environ_prefix=None
+    )
+    PISTE_API_TIMEOUT = values.IntegerValue(
+        10, environ_name="PISTE_API_TIMEOUT", environ_prefix=None
     )
 
     LANGFUSE_SECRET_KEY = SecretFileValue(

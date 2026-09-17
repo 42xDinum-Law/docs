@@ -857,6 +857,27 @@ class LawSearchQuerySerializer(serializers.Serializer):
     q = serializers.CharField(min_length=1, max_length=500, required=True)
 
 
+class LawSuggestQuerySerializer(LawSearchQuerySerializer):
+    """Serializer for law suggest query parameters (adds pagination)."""
+
+    page = serializers.IntegerField(min_value=1, required=False, default=1)
+
+
+class LawArticleQuerySerializer(serializers.Serializer):
+    """Serializer for law article query parameters: exactly one of id/cid."""
+
+    id = serializers.CharField(required=False)
+    cid = serializers.CharField(required=False)
+
+    def validate(self, attrs):
+        """Ensure exactly one of `id`/`cid` is provided."""
+        if bool(attrs.get("id")) == bool(attrs.get("cid")):
+            raise serializers.ValidationError(
+                "Exactly one of 'id' or 'cid' must be provided."
+            )
+        return attrs
+
+
 class MoveDocumentSerializer(serializers.Serializer):
     """
     Serializer for validating input data to move a document within the tree structure.

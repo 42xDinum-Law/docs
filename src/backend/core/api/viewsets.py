@@ -56,6 +56,7 @@ from core.services.ai_services.legacy import get_legacy_ai_service
 from core.services.collaboration_services import CollaborationService
 from core.services.external_apis.albert import get_albert_api_client
 from core.services.external_apis.base import ExternalAPIError
+from core.services.external_apis.legifrance import get_legifrance_api_client
 from core.services.converter_services import (
     ConversionError,
     Converter,
@@ -3098,7 +3099,7 @@ class LawSearchView(drf.views.APIView):
     """API View proxying law article search requests to the Albert API."""
 
     permission_classes = [IsAuthenticated]
-    throttle_classes = [utils.AIUserRateThrottle]
+    throttle_classes = [utils.LawSearchRateThrottle]
 
     def get(self, request):
         """
@@ -3117,6 +3118,68 @@ class LawSearchView(drf.views.APIView):
             )
         except ExternalAPIError as err:
             logger.exception("Law search request failed")
+            return drf.response.Response(
+                {"detail": str(err)}, status=drf.status.HTTP_502_BAD_GATEWAY
+            )
+
+        return drf.response.Response(result, status=drf.status.HTTP_200_OK)
+
+
+class LawSuggestView(drf.views.APIView):
+    """API View proxying law text suggestion requests to the Légifrance API."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [utils.LawSearchRateThrottle]
+
+    def get(self, request):
+        """
+        GET /api/v1.0/law-suggest/?q=<query>&page=<page>
+        Suggest Légifrance texts (LEGI/JORF) matching the query, for typeahead.
+        """
+        if not settings.LAW_SEARCH_FEATURE_ENABLED:
+            raise ValidationError("Law search feature is not enabled.")
+
+        serializer = serializers.LawSuggestQuerySerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = get_legifrance_api_client().suggest(
+                serializer.validated_data["q"], serializer.validated_data["page"]
+            )
+        except ExternalAPIError as err:
+            logger.exception("Law suggest request failed")
+            return drf.response.Response(
+                {"detail": str(err)}, status=drf.status.HTTP_502_BAD_GATEWAY
+            )
+
+        return drf.response.Response(result, status=drf.status.HTTP_200_OK)
+
+
+class LawArticleView(drf.views.APIView):
+    """API View proxying law article content requests to the Légifrance API."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [utils.LawSearchRateThrottle]
+
+    def get(self, request):
+        """
+        GET /api/v1.0/law-article/?id=<id> or ?cid=<cid>
+        Fetch a Légifrance article's canonical content, to cite it verbatim.
+        """
+        if not settings.LAW_SEARCH_FEATURE_ENABLED:
+            raise ValidationError("Law search feature is not enabled.")
+
+        serializer = serializers.LawArticleQuerySerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+
+        client = get_legifrance_api_client()
+        try:
+            if serializer.validated_data.get("id"):
+                result = client.get_article(serializer.validated_data["id"])
+            else:
+                result = client.get_article_by_cid(serializer.validated_data["cid"])
+        except ExternalAPIError as err:
+            logger.exception("Law article request failed")
             return drf.response.Response(
                 {"detail": str(err)}, status=drf.status.HTTP_502_BAD_GATEWAY
             )

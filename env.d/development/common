@@ -104,3 +104,10 @@ LAW_SEARCH_LEGIFRANCE_COLLECTION_ID=139226
 # Set a real Albert API key to actually hit the API; without one, the
 # /law-search/ endpoint raises ImproperlyConfigured on first use.
 ALBERT_API_KEY=
+
+# Légifrance (PISTE) - used by /law-suggest/ and /law-article/ to identify
+# texts and fetch their canonical content. Set real sandbox credentials
+# (https://piste.gouv.fr) to actually hit the API; without them, these
+# endpoints raise ImproperlyConfigured on first use, same as ALBERT_API_KEY.
+PISTE_CLIENT_ID=
+PISTE_CLIENT_SECRET=

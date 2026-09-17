@@ -1,5 +1,6 @@
 import { StyleSchema } from '@blocknote/core';
 import { ReactCustomInlineContentRenderProps } from '@blocknote/react';
+import { Button, CustomTabs, TabData } from '@gouvfr-lasuite/ui-components';
 import { Popover } from '@mantine/core';
 import type { KeyboardEvent } from 'react';
 import { useEffect, useId, useRef, useState } from 'react';
@@ -7,31 +8,19 @@ import { useTranslation } from 'react-i18next';
 import { css } from 'styled-components';
 import { useDebouncedCallback } from 'use-debounce';
 
-import { Box, Card, Icon, Text } from '@/components';
+import { Box, Card, Icon, InfiniteScroll, Loading, Text } from '@/components';
 import { DocsBlockNoteEditor } from '@/docs/doc-editor/types';
 import { useResponsiveStore } from '@/stores';
 
 import { LawInlineContentType } from './LawInlineContent';
 import {
   LawArticleResult,
-  getFirstSentence,
-  searchLawArticles,
+  LawSuggestion,
+  buildLegifranceUrl,
+  fetchLawArticleContent,
+  isArticleId,
+  suggestLawArticles,
 } from './lawArticlesData';
-
-// Formats a `YYYY-MM-DD` law date (eg. "2016-10-01") as a French date (eg.
-// "1 octobre 2016"). Falls back to the raw value if it doesn't parse.
-const formatLawDate = (isoDate: string): string => {
-  const date = new Date(isoDate);
-  if (Number.isNaN(date.getTime())) {
-    return isoDate;
-  }
-
-  return date.toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-};
 
 const inputStyle = css`
   background-color: transparent;
@@ -48,12 +37,37 @@ type ReactLawArticleSearch = ReactCustomInlineContentRenderProps<
   StyleSchema
 >;
 
+type InsertMode = 'title' | 'full' | 'titleDate';
+
+// Tab ids: how `LawSuggestion`s are bucketed, mirroring Légifrance's own
+// search UI, which only has 3 distinct icons in this scope (Codes / other
+// LEGI texts / JORF) rather than one per fine-grained nature.
+const TAB_ALL = 'all';
+const TAB_CODES = 'codes';
+const TAB_LEGI = 'legi';
+const TAB_JORF = 'jorf';
+
+const matchesTab = (tabId: string, suggestion: LawSuggestion): boolean => {
+  switch (tabId) {
+    case TAB_CODES:
+      return suggestion.nature === 'code';
+    case TAB_LEGI:
+      return suggestion.origin === 'LEGI' && suggestion.nature !== 'code';
+    case TAB_JORF:
+      return suggestion.origin === 'JORF';
+    default:
+      return true;
+  }
+};
+
 /**
  * Search UI shown while a law-article inline content is active: an inline
  * text input (opened automatically on mount) backed by a popover listing
- * results from `searchLawArticles`. Selecting a result inserts it as plain
- * editable text (see `selectArticle`) and removes this node; dismissing the
- * search removes it too, optionally restoring the typed text.
+ * Légifrance `/suggest` results, grouped in tabs, with infinite scroll.
+ * Selecting a result fetches its canonical content (for article-level
+ * suggestions) and inserts it as plain editable text (see `insertResult`),
+ * removing this node; dismissing the search removes it too, optionally
+ * restoring the typed text.
  */
 export const LawSearchPage = ({
   contentRef,
@@ -66,9 +80,14 @@ export const LawSearchPage = ({
   const dropdownId = useId();
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [results, setResults] = useState<LawArticleResult[]>([]);
+  const [suggestions, setSuggestions] = useState<LawSuggestion[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [searchError, setSearchError] = useState(false);
+  const [selectingId, setSelectingId] = useState<string | null>(null);
+  const [selectErrorId, setSelectErrorId] = useState<string | null>(null);
   const [popoverOpened, setPopoverOpened] = useState(false);
   const debounceSearch = useDebouncedCallback(setDebouncedSearch, 300);
   const { isDesktop } = useResponsiveStore();
@@ -92,17 +111,20 @@ export const LawSearchPage = ({
     let cancelled = false;
     setLoading(true);
     setSearchError(false);
+    setPage(1);
 
-    searchLawArticles(debouncedSearch)
-      .then((articles) => {
+    suggestLawArticles(debouncedSearch, 1)
+      .then(({ suggestions: results, hasMore: more }) => {
         if (!cancelled) {
-          setResults(articles);
+          setSuggestions(results);
+          setHasMore(more);
           setLoading(false);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setResults([]);
+          setSuggestions([]);
+          setHasMore(false);
           setLoading(false);
           setSearchError(true);
         }
@@ -112,6 +134,30 @@ export const LawSearchPage = ({
       cancelled = true;
     };
   }, [debouncedSearch]);
+
+  const loadMore = () => {
+    if (isLoadingMore || !hasMore) {
+      return;
+    }
+
+    const nextPage = page + 1;
+    setIsLoadingMore(true);
+
+    suggestLawArticles(debouncedSearch, nextPage)
+      .then(({ suggestions: more, hasMore: moreHasMore }) => {
+        setSuggestions((prev) => {
+          const seenIds = new Set(prev.map((suggestion) => suggestion.id));
+          return [
+            ...prev,
+            ...more.filter((suggestion) => !seenIds.has(suggestion.id)),
+          ];
+        });
+        setPage(nextPage);
+        setHasMore(moreHasMore);
+      })
+      .catch(() => setHasMore(false))
+      .finally(() => setIsLoadingMore(false));
+  };
 
   /**
    * Cancels the search: marks this inline content `disabled` (see
@@ -147,21 +193,7 @@ export const LawSearchPage = ({
   // as "Title : text", with no link; in "titleDate" mode the title, its
   // date and the article text are inserted as a gray callout block, with
   // the title and date linked to the source.
-  const selectArticle = (
-    article: LawArticleResult,
-    mode: 'title' | 'full' | 'titleDate',
-  ) => {
-    if (!isEditable) {
-      return;
-    }
-
-    updateInlineContent({
-      type: 'lawArticleInline',
-      props: {
-        disabled: true,
-      },
-    });
-
+  const insertResult = (article: LawArticleResult, mode: InsertMode) => {
     contentRef(null);
     editor.focus();
 
@@ -180,7 +212,7 @@ export const LawSearchPage = ({
           ? [
               {
                 type: 'text' as const,
-                text: ` (${formatLawDate(article.lawDate)})`,
+                text: ` (${article.lawDate})`,
                 styles: { italic: true, textColor: 'gray' as const },
               },
             ]
@@ -227,6 +259,50 @@ export const LawSearchPage = ({
     );
   };
 
+  const selectArticle = (suggestion: LawSuggestion, mode: InsertMode) => {
+    if (!isEditable) {
+      return;
+    }
+
+    // Whole texts/codes have no single citable body: only a linked title
+    // can be inserted for them, straight from the suggestion itself.
+    if (!isArticleId(suggestion.id)) {
+      updateInlineContent({
+        type: 'lawArticleInline',
+        props: { disabled: true },
+      });
+      insertResult(
+        {
+          lawTitle: suggestion.label,
+          lawText: '',
+          lawSourceUrl: buildLegifranceUrl(suggestion.id),
+          lawDate: '',
+          lawStatus: '',
+        },
+        'title',
+      );
+      return;
+    }
+
+    setSelectingId(suggestion.id);
+    setSelectErrorId(null);
+
+    fetchLawArticleContent(suggestion)
+      .then((article) => {
+        updateInlineContent({
+          type: 'lawArticleInline',
+          props: { disabled: true },
+        });
+        insertResult(article, mode);
+      })
+      .catch(() => {
+        setSelectErrorId(suggestion.id);
+      })
+      .finally(() => {
+        setSelectingId(null);
+      });
+  };
+
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') {
       // Give the user back their typed text as plain "/search" content
@@ -238,13 +314,81 @@ export const LawSearchPage = ({
       // like deleting the "/" that triggered the slash menu.
       e.preventDefault();
       closeSearch('');
-    } else if (e.key === 'Enter' && results.length > 0) {
+    } else if (e.key === 'Enter' && suggestions.length > 0) {
       // Enter picks the top result as a linked title, mirroring the
       // slash-menu convention.
       e.preventDefault();
-      selectArticle(results[0], 'title');
+      selectArticle(suggestions[0], 'title');
     }
   };
+
+  const renderResults = (filteredSuggestions: LawSuggestion[]) => (
+    <>
+      {loading && <Loading $padding="sm" $height="auto" />}
+
+      {!loading && searchError && (
+        <Box $padding="sm">
+          <Text
+            $size="sm"
+            $color="var(--c--contextuals--content--semantic--error--primary)"
+          >
+            {t('Law article search failed, please try again')}
+          </Text>
+        </Box>
+      )}
+
+      {!loading && !searchError && filteredSuggestions.length === 0 && (
+        <Box $padding="sm">
+          <Text
+            $size="sm"
+            $color="var(--c--contextuals--content--semantic--neutral--tertiary)"
+          >
+            {t('No law article found')}
+          </Text>
+        </Box>
+      )}
+
+      {!loading && filteredSuggestions.length > 0 && (
+        <InfiniteScrollResults
+          suggestions={filteredSuggestions}
+          hasMore={hasMore}
+          isLoadingMore={isLoadingMore}
+          loadMore={loadMore}
+          selectingId={selectingId}
+          selectErrorId={selectErrorId}
+          onSelect={selectArticle}
+        />
+      )}
+    </>
+  );
+
+  const tabs: TabData[] = [
+    { id: TAB_ALL, label: t('All'), content: renderResults(suggestions) },
+    {
+      id: TAB_CODES,
+      label: t('Codes'),
+      icon: 'menu_book',
+      content: renderResults(
+        suggestions.filter((suggestion) => matchesTab(TAB_CODES, suggestion)),
+      ),
+    },
+    {
+      id: TAB_LEGI,
+      label: t('Legal texts'),
+      icon: 'article',
+      content: renderResults(
+        suggestions.filter((suggestion) => matchesTab(TAB_LEGI, suggestion)),
+      ),
+    },
+    {
+      id: TAB_JORF,
+      label: t('Official journal'),
+      icon: 'newspaper',
+      content: renderResults(
+        suggestions.filter((suggestion) => matchesTab(TAB_JORF, suggestion)),
+      ),
+    },
+  ];
 
   return (
     <Box as="span" $position="relative">
@@ -315,12 +459,7 @@ export const LawSearchPage = ({
               }
             `}
           >
-            <Box
-              ref={modalRef}
-              id={dropdownId}
-              role="listbox"
-              aria-label={t('Search results')}
-            >
+            <Box ref={modalRef} id={dropdownId} aria-label={t('Search results')}>
               <Card
                 $css={css`
                   box-shadow: 0 0 6px 0 rgba(0, 0, 145, 0.1);
@@ -329,173 +468,171 @@ export const LawSearchPage = ({
                   background: var(
                     --c--contextuals--background--surface--primary
                   );
-                  max-height: 280px;
+                  max-height: 340px;
                   overflow-y: auto;
                   overflow-x: hidden;
                 `}
                 $margin="sm"
                 $padding="none"
               >
-                {loading && (
-                  <Box $padding="sm">
-                    <Text
-                      $size="sm"
-                      $color="var(--c--contextuals--content--semantic--neutral--tertiary)"
-                    >
-                      {t('Searching...')}
-                    </Text>
-                  </Box>
-                )}
-
-                {!loading && searchError && (
-                  <Box $padding="sm">
-                    <Text
-                      $size="sm"
-                      $color="var(--c--contextuals--content--semantic--error--primary)"
-                    >
-                      {t('Law article search failed, please try again')}
-                    </Text>
-                  </Box>
-                )}
-
-                {!loading && !searchError && results.length === 0 && (
-                  <Box $padding="sm">
-                    <Text
-                      $size="sm"
-                      $color="var(--c--contextuals--content--semantic--neutral--tertiary)"
-                    >
-                      {t('No law article found')}
-                    </Text>
-                  </Box>
-                )}
-
-                {!loading &&
-                  results.map((article, index) => (
-                    <Box
-                      key={article.lawSourceUrl}
-                      role="option"
-                      aria-selected={index === 0}
-                      $direction="row"
-                      $align="flex-start"
-                      $justify="space-between"
-                      $gap="0.4rem"
-                      $width="100%"
-                      $padding="sm"
-                      $css={css`
-                        text-align: left;
-                        min-width: 0;
-                        max-width: 100%;
-                        box-sizing: border-box;
-
-                        &:hover,
-                        &:focus-within {
-                          background-color: var(
-                            --c--contextuals--background--semantic--contextual--primary
-                          );
-                        }
-
-                        &:hover .law-article-result-actions,
-                        &:focus-within .law-article-result-actions {
-                          opacity: 1;
-                          pointer-events: auto;
-                        }
-                      `}
-                    >
-                      <Box
-                        $direction="column"
-                        $align="flex-start"
-                        $gap="0.2rem"
-                        $css={css`
-                          min-width: 0;
-                          flex: 1;
-                        `}
-                      >
-                        <Text $size="sm" $weight="600">
-                          {article.lawTitle}
-                        </Text>
-                        <Text
-                          $size="xs"
-                          $color="var(--c--contextuals--content--semantic--neutral--tertiary)"
-                          $css={css`
-                            width: 100%;
-                            white-space: normal;
-                            overflow-wrap: break-word;
-                            display: -webkit-box;
-                            -webkit-line-clamp: 2;
-                            -webkit-box-orient: vertical;
-                            overflow: hidden;
-                          `}
-                        >
-                          {getFirstSentence(article.lawText)}
-                        </Text>
-                      </Box>
-                      <Box
-                        className="law-article-result-actions"
-                        $direction="row"
-                        $gap="0.2rem"
-                        $css={css`
-                          flex-shrink: 0;
-                          opacity: 0;
-                          pointer-events: none;
-                          transition: opacity 0.15s ease;
-                        `}
-                      >
-                        {(['title', 'titleDate', 'full'] as const).map(
-                          (mode) => (
-                            <Box
-                              key={mode}
-                              as="button"
-                              type="button"
-                              title={
-                                mode === 'title'
-                                  ? t('Insert as a linked title')
-                                  : mode === 'full'
-                                    ? t('Insert as full text')
-                                    : t('Insert as a linked title with date')
-                              }
-                              aria-label={
-                                mode === 'title'
-                                  ? t('Insert as a linked title')
-                                  : mode === 'full'
-                                    ? t('Insert as full text')
-                                    : t('Insert as a linked title with date')
-                              }
-                              onClick={() => selectArticle(article, mode)}
-                              $padding="3px"
-                              $css={css`
-                                display: inline-flex;
-                                border: 1px solid
-                                  var(
-                                    --c--contextuals--border--surface--primary
-                                  );
-                                border-radius: 4px;
-                                cursor: pointer;
-                                background: var(
-                                  --c--contextuals--background--surface--primary
-                                );
-                              `}
-                            >
-                              <Icon
-                                iconName={
-                                  mode === 'title'
-                                    ? 'link'
-                                    : mode === 'full'
-                                      ? 'notes'
-                                      : 'crop_square'
-                                }
-                                $size="16px"
-                              />
-                            </Box>
-                          ),
-                        )}
-                      </Box>
-                    </Box>
-                  ))}
+                <CustomTabs tabs={tabs} />
               </Card>
             </Box>
           </Box>
         </Popover.Dropdown>
       </Popover>
     </Box>
+  );
+};
+
+type InfiniteScrollResultsProps = {
+  suggestions: LawSuggestion[];
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  loadMore: () => void;
+  selectingId: string | null;
+  selectErrorId: string | null;
+  onSelect: (suggestion: LawSuggestion, mode: InsertMode) => void;
+};
+
+const NATURE_LABELS: Record<string, string> = {
+  code: 'Code',
+  loi: 'Loi',
+  decret: 'Décret',
+  ordonnance: 'Ordonnance',
+  arrete: 'Arrêté',
+};
+
+const InfiniteScrollResults = ({
+  suggestions,
+  hasMore,
+  isLoadingMore,
+  loadMore,
+  selectingId,
+  selectErrorId,
+  onSelect,
+}: InfiniteScrollResultsProps) => {
+  const { t } = useTranslation();
+
+  return (
+    <InfiniteScroll
+      hasMore={hasMore}
+      isLoading={isLoadingMore}
+      next={loadMore}
+      $css="max-height: 260px; overflow-y: auto;"
+    >
+      {suggestions.map((suggestion) => {
+        const isSelecting = selectingId === suggestion.id;
+        const hasSelectError = selectErrorId === suggestion.id;
+        const isArticle = isArticleId(suggestion.id);
+
+        return (
+          <Box
+            key={suggestion.id}
+            $direction="row"
+            $align="flex-start"
+            $justify="space-between"
+            $gap="0.4rem"
+            $width="100%"
+            $padding="sm"
+            $css={css`
+              text-align: left;
+              min-width: 0;
+              max-width: 100%;
+              box-sizing: border-box;
+
+              &:hover,
+              &:focus-within {
+                background-color: var(
+                  --c--contextuals--background--semantic--contextual--primary
+                );
+              }
+
+              &:hover .law-article-result-actions,
+              &:focus-within .law-article-result-actions {
+                opacity: 1;
+                pointer-events: auto;
+              }
+            `}
+          >
+            <Box
+              $direction="column"
+              $align="flex-start"
+              $gap="0.2rem"
+              $css={css`
+                min-width: 0;
+                flex: 1;
+              `}
+            >
+              <Text $size="sm" $weight="600">
+                {suggestion.label}
+              </Text>
+              <Text
+                $size="xs"
+                $color="var(--c--contextuals--content--semantic--neutral--tertiary)"
+              >
+                {NATURE_LABELS[suggestion.nature] ?? suggestion.nature}
+              </Text>
+              {hasSelectError && (
+                <Text
+                  $size="xs"
+                  $color="var(--c--contextuals--content--semantic--error--primary)"
+                >
+                  {t('Failed to fetch this article, please try again')}
+                </Text>
+              )}
+            </Box>
+
+            {isSelecting ? (
+              <Loading $padding="none" $height="auto" />
+            ) : (
+              <Box
+                className="law-article-result-actions"
+                $direction="row"
+                $gap="0.2rem"
+                $css={css`
+                  flex-shrink: 0;
+                  opacity: 0;
+                  pointer-events: none;
+                  transition: opacity 0.15s ease;
+                `}
+              >
+                <Button
+                  size="nano"
+                  variant="tertiary"
+                  color="neutral"
+                  aria-label={t('Insert as a linked title')}
+                  title={t('Insert as a linked title')}
+                  onClick={() => onSelect(suggestion, 'title')}
+                  icon={<Icon iconName="link" $size="16px" />}
+                />
+                {isArticle && (
+                  <>
+                    <Button
+                      size="nano"
+                      variant="tertiary"
+                      color="neutral"
+                      aria-label={t('Insert as a linked title with date')}
+                      title={t('Insert as a linked title with date')}
+                      onClick={() => onSelect(suggestion, 'titleDate')}
+                      icon={<Icon iconName="crop_square" $size="16px" />}
+                    />
+                    <Button
+                      size="nano"
+                      variant="tertiary"
+                      color="neutral"
+                      aria-label={t('Insert as full text')}
+                      title={t('Insert as full text')}
+                      onClick={() => onSelect(suggestion, 'full')}
+                      icon={<Icon iconName="notes" $size="16px" />}
+                    />
+                  </>
+                )}
+              </Box>
+            )}
+          </Box>
+        );
+      })}
+    </InfiniteScroll>
   );
 };

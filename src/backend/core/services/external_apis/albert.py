@@ -46,7 +46,7 @@ class AlbertApiClient(ExternalAPIClient):
             json={
                 "query": query,
                 "collection_ids": [self.collection_id],
-                "method": "lexical",
+                "method": "hybrid",
                 "metadata_filters": metadata_filters,
             },
         )

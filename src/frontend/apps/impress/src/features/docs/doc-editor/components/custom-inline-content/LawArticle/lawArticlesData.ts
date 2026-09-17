@@ -1,7 +1,8 @@
 import { APIError, errorCauses, fetchAPI } from '@/api';
 
-// Shape returned by the law-article search once parsed, and stored as the
-// inline content's props once an article has been picked.
+// Shape returned once a suggestion's canonical content has been fetched and
+// parsed, and stored as the inline content's props once an article has been
+// picked.
 export type LawArticleResult = {
   lawTitle: string;
   lawText: string;
@@ -11,26 +12,40 @@ export type LawArticleResult = {
 };
 
 /**
- * Raw shape returned by the `/law-search/` endpoint, which itself proxies
- * the Albert API's search response as-is (see `core.api.viewsets.LawSearchView`
- * on the backend). Only a subset of `chunk.metadata` is actually used — see
- * `parseLawApiResult` — the rest is kept untyped since it's a passthrough.
+ * A single `/suggest` result: identifies an official Légifrance text, either
+ * a specific article (`LEGIARTI…`/`JORFARTI…`, see `isArticleId`) or a whole
+ * text/code (`LEGITEXT…`/`JORFTEXT…`). Only whole articles can be resolved to
+ * citable content via `fetchLawArticleContent`.
  */
-export type LawApiResult = {
-  method: string;
-  score: number;
-  chunk: {
-    id: number;
-    document_id: number;
-    content: string;
-    metadata: Record<string, string | number | boolean> | null;
+export type LawSuggestion = {
+  id: string;
+  label: string;
+  origin: string;
+  nature: string;
+};
+
+type LawSuggestApiResponse = {
+  results: LawSuggestion[];
+};
+
+/**
+ * Raw shape returned by `consult/getArticle`/`consult/getArticleByCid`
+ * (proxied as-is by `/law-article/`, see `core.api.viewsets.LawArticleView`).
+ * Only a subset of fields is used — see `parseLegifranceArticle` — the rest
+ * is kept untyped since it's a passthrough.
+ */
+type LegifranceArticleApiResponse = {
+  article: {
+    id: string;
+    texte: string;
+    num: string;
+    etat: string;
+    dateDebut: number;
+    textTitles?: { id: string; titre: string; etat: string }[];
   };
 };
 
-type LawSearchApiResponse = {
-  object: string;
-  data: LawApiResult[];
-};
+const LEGIFRANCE_SUGGEST_PAGE_SIZE = 10;
 
 // Légifrance status codes to their human-readable French label. Unknown
 // codes fall back to the raw value so new statuses don't break the UI.
@@ -41,17 +56,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 /**
- * Returns just the first sentence of `text` (up to and including the first
- * ., ! or ?), or `text` itself if it has no sentence-ending punctuation.
- * Used to keep search-result previews short without mid-word ellipsis.
- */
-export const getFirstSentence = (text: string): string => {
-  const match = /^.*?[.!?](?=\s|$)/.exec(text);
-  return match ? match[0] : text;
-};
-
-/**
- * Rebuilds a Légifrance permalink from a `_doc_id` (eg. `LEGIARTI...`,
+ * Rebuilds a Légifrance permalink from an id (eg. `LEGIARTI...`,
  * `JORFARTI...`, `LEGITEXT...`, `JORFTEXT...`). Légifrance uses a different
  * URL scheme per id prefix, so this can't be a single template.
  */
@@ -80,71 +85,118 @@ export const buildLegifranceUrl = (docId?: string): string => {
 };
 
 /**
- * Extracts the article's title from a chunk's `content`: everything before
- * the first newline (eg. "Code civil - Article 1101" or "LOI n° 2016-1321
- * ... - Article 8"). The rest of `content` is the article text (and, for
- * some sources, section headers).
+ * Whether `id` identifies a single article (`LEGIARTI…`/`JORFARTI…`) rather
+ * than a whole text/code (`LEGITEXT…`/`JORFTEXT…`). Only article ids can be
+ * resolved to citable content via `consult/getArticle(ByCid)` — `/suggest`
+ * returns both kinds mixed together.
  */
-export const extractLawTitle = (content: string): string => {
-  const newlineIndex = content.indexOf('\n');
-  return (newlineIndex === -1 ? content : content.slice(0, newlineIndex)).trim();
-};
+export const isArticleId = (id: string): boolean =>
+  id.startsWith('LEGIARTI') || id.startsWith('JORFARTI');
 
-// Reads a string field out of a chunk's opaque metadata, since the API only
-// guarantees it's a JSON object of scalars, not this feature's exact shape.
-const getMetadataString = (
-  metadata: LawApiResult['chunk']['metadata'],
-  key: string,
-): string | undefined => {
-  const value = metadata?.[key];
-  return typeof value === 'string' ? value : undefined;
+/**
+ * Formats a Légifrance date (epoch milliseconds, as returned by
+ * `consult/getArticle`) as a French date (eg. "1 octobre 2016"). Falls back
+ * to an empty string if it doesn't parse.
+ */
+export const formatLawDate = (epochMs: number): string => {
+  const date = new Date(epochMs);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  return date.toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 };
 
 /**
- * Parses a raw API result into the shape the LawArticle feature displays.
+ * Parses a raw `consult/getArticle`/`getArticleByCid` response into the
+ * shape the LawArticle feature displays. The title is built from the
+ * containing text's current title (the `textTitles` entry marked `VIGUEUR`,
+ * falling back to the last one) plus the article number, eg.
+ * "Code civil - Article 1101".
  */
-export const parseLawApiResult = (result: LawApiResult): LawArticleResult => {
-  const { content, metadata } = result.chunk;
-  const newlineIndex = content.indexOf('\n');
-  const text = newlineIndex === -1 ? '' : content.slice(newlineIndex + 1);
-  const status = getMetadataString(metadata, 'status');
+export const parseLegifranceArticle = (
+  result: LegifranceArticleApiResponse,
+): LawArticleResult => {
+  const { article } = result;
+  const textTitles = article.textTitles ?? [];
+  const textTitle =
+    textTitles.find((title) => title.etat === 'VIGUEUR') ??
+    textTitles[textTitles.length - 1];
 
   return {
-    lawTitle: extractLawTitle(content),
-    lawText: text.trim(),
-    lawSourceUrl: buildLegifranceUrl(getMetadataString(metadata, '_doc_id')),
-    lawDate: getMetadataString(metadata, 'start_date') ?? '',
-    lawStatus: status ? (STATUS_LABELS[status] ?? status) : '',
+    lawTitle: textTitle
+      ? `${textTitle.titre} - Article ${article.num}`
+      : `Article ${article.num}`,
+    lawText: article.texte.trim(),
+    lawSourceUrl: buildLegifranceUrl(article.id),
+    lawDate: formatLawDate(article.dateDebut),
+    lawStatus: article.etat ? (STATUS_LABELS[article.etat] ?? article.etat) : '',
   };
 };
 
 /**
- * Searches law articles via the `/law-search/` endpoint, which proxies a
- * Légifrance-backed semantic/chunk search (the Albert API) restricted to
- * in-force (VIGUEUR) texts. Empty queries resolve to no results without
- * hitting the API, since the endpoint requires a non-empty `q`.
+ * Suggests Légifrance texts (LEGI/JORF) matching `query` via the
+ * `/law-suggest/` endpoint, for the dropdown's typeahead. Empty queries
+ * resolve to no results without hitting the API, since the endpoint
+ * requires a non-empty `q`.
+ *
+ * `hasMore` is a heuristic (a full page came back, there's *probably* more)
+ * rather than a real total from the API: Légifrance's `totalResultNumber`
+ * has been observed to be unreliable (`0` even with 10 results returned).
  */
-export const searchLawArticles = async (
+export const suggestLawArticles = async (
   query: string,
-): Promise<LawArticleResult[]> => {
+  page: number,
+): Promise<{ suggestions: LawSuggestion[]; hasMore: boolean }> => {
   const trimmedQuery = query.trim();
 
   if (!trimmedQuery) {
-    return [];
+    return { suggestions: [], hasMore: false };
   }
 
   const response = await fetchAPI(
-    `law-search/?q=${encodeURIComponent(trimmedQuery)}`,
+    `law-suggest/?q=${encodeURIComponent(trimmedQuery)}&page=${page}`,
   );
 
   if (!response.ok) {
     throw new APIError(
-      'Failed to search law articles',
+      'Failed to suggest law articles',
       await errorCauses(response),
     );
   }
 
-  const { data } = (await response.json()) as LawSearchApiResponse;
+  const { results } = (await response.json()) as LawSuggestApiResponse;
 
-  return data.map(parseLawApiResult);
+  return {
+    suggestions: results,
+    hasMore: results.length === LEGIFRANCE_SUGGEST_PAGE_SIZE,
+  };
+};
+
+/**
+ * Fetches an article's canonical content via the `/law-article/` endpoint,
+ * to cite it verbatim. Only valid for article ids (see `isArticleId`) — a
+ * whole text/code has no single citable body.
+ */
+export const fetchLawArticleContent = async (
+  suggestion: Pick<LawSuggestion, 'id'>,
+): Promise<LawArticleResult> => {
+  const response = await fetchAPI(
+    `law-article/?id=${encodeURIComponent(suggestion.id)}`,
+  );
+
+  if (!response.ok) {
+    throw new APIError(
+      'Failed to fetch law article content',
+      await errorCauses(response),
+    );
+  }
+
+  const result = (await response.json()) as LegifranceArticleApiResponse;
+
+  return parseLegifranceArticle(result);
 };
