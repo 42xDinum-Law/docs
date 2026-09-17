@@ -949,6 +949,14 @@ class Base(Configuration):
         environ_name="LAW_SEARCH_LEGIFRANCE_COLLECTION_ID",
         environ_prefix=None,
     )
+    # Separate from AI_USER_RATE_THROTTLE_RATES: law search is a cheap,
+    # high-frequency lookup (fired on every debounced keystroke), so it
+    # shouldn't compete with the AI budget for the same user.
+    LAW_SEARCH_USER_RATE_THROTTLE_RATES = {
+        "minute": 20,
+        "hour": 200,
+        "day": 1000,
+    }
 
     LANGFUSE_SECRET_KEY = SecretFileValue(
         None, environ_name="LANGFUSE_SECRET_KEY", environ_prefix=None

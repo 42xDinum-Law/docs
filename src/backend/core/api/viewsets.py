@@ -3098,7 +3098,7 @@ class LawSearchView(drf.views.APIView):
     """API View proxying law article search requests to the Albert API."""
 
     permission_classes = [IsAuthenticated]
-    throttle_classes = [utils.AIUserRateThrottle]
+    throttle_classes = [utils.LawSearchRateThrottle]
 
     def get(self, request):
         """

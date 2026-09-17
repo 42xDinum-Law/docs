@@ -372,7 +372,7 @@ export const LawSearchPage = ({
                 {!loading &&
                   results.map((article, index) => (
                     <Box
-                      key={article.lawSourceUrl}
+                      key={`${article.lawSourceUrl}-${index}`}
                       role="option"
                       aria-selected={index === 0}
                       $direction="row"

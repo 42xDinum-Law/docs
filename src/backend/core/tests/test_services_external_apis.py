@@ -103,7 +103,7 @@ class TestAlbertApiClient:
         body = json.loads(payload)
         assert body["query"] == "droit à l'oubli"
         assert body["collection_ids"] == [139226]
-        assert body["method"] == "semantic"
+        assert body["method"] == "lexical"
         assert body["metadata_filters"] == {
             "key": "status",
             "type": "eq",
