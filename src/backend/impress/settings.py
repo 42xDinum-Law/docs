@@ -939,6 +939,13 @@ class Base(Configuration):
     ALBERT_API_TIMEOUT = values.IntegerValue(
         10, environ_name="ALBERT_API_TIMEOUT", environ_prefix=None
     )
+    # Reranking model used to reorder law search results after the initial
+    # lexical search (see AlbertApiClient._rerank).
+    ALBERT_RERANK_MODEL = values.Value(
+        "openweight-rerank",
+        environ_name="ALBERT_RERANK_MODEL",
+        environ_prefix=None,
+    )
     LAW_SEARCH_FEATURE_ENABLED = values.BooleanValue(
         default=False,
         environ_name="LAW_SEARCH_FEATURE_ENABLED",

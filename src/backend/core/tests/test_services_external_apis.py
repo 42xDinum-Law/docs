@@ -1,5 +1,7 @@
 """Tests for the generic external API client and the Albert API client."""
 
+import json
+
 from django.core.exceptions import ImproperlyConfigured
 
 import pytest
@@ -98,12 +100,11 @@ class TestAlbertApiClient:
         AlbertApiClient().search_legifrance("droit à l'oubli")
 
         payload = mocked.calls[0].request.body
-        import json  # pylint: disable=import-outside-toplevel
-
         body = json.loads(payload)
         assert body["query"] == "droit à l'oubli"
         assert body["collection_ids"] == [139226]
         assert body["method"] == "lexical"
+        assert body["limit"] == 50
         assert body["metadata_filters"] == {
             "key": "status",
             "type": "eq",
@@ -120,8 +121,6 @@ class TestAlbertApiClient:
 
         AlbertApiClient().search_legifrance("route", category="CODE")
 
-        import json  # pylint: disable=import-outside-toplevel
-
         body = json.loads(mocked.calls[0].request.body)
         assert body["metadata_filters"] == {
             "operator": "and",
@@ -134,3 +133,56 @@ class TestAlbertApiClient:
     def test_get_albert_api_client_is_cached(self):
         """get_albert_api_client() should return the same instance on repeat calls."""
         assert get_albert_api_client() is get_albert_api_client()
+
+    @responses.activate
+    def test_search_legifrance_reorders_results_by_rerank_score(self):
+        """Results should come back in rerank order, not lexical search order."""
+        responses.post(
+            "https://albert.example.com/v1/search",
+            json={
+                "object": "list",
+                "data": [
+                    {"chunk": {"content": "chunk about roads in general"}},
+                    {"chunk": {"content": "Décret n°84-1110 du 14 décembre 1984"}},
+                ],
+            },
+        )
+        mocked_rerank = responses.post(
+            "https://albert.example.com/v1/rerank",
+            json={
+                "results": [
+                    {"index": 1, "relevance_score": 0.95},
+                    {"index": 0, "relevance_score": 0.2},
+                ]
+            },
+        )
+
+        result = AlbertApiClient().search_legifrance("décret 84-1110")
+
+        rerank_body = json.loads(mocked_rerank.calls[0].request.body)
+        assert rerank_body["model"] == "openweight-rerank"
+        assert rerank_body["query"] == "décret 84-1110"
+        assert rerank_body["documents"] == [
+            "chunk about roads in general",
+            "Décret n°84-1110 du 14 décembre 1984",
+        ]
+        assert rerank_body["top_n"] == 2
+
+        assert result["data"][0]["chunk"]["content"] == (
+            "Décret n°84-1110 du 14 décembre 1984"
+        )
+        assert result["data"][0]["score"] == 0.95
+        assert result["data"][1]["score"] == 0.2
+
+    @responses.activate
+    def test_search_legifrance_skips_rerank_when_no_results(self):
+        """No rerank call should be made when the search returns no data."""
+        responses.post(
+            "https://albert.example.com/v1/search",
+            json={"object": "list", "data": []},
+        )
+
+        result = AlbertApiClient().search_legifrance("route")
+
+        assert result == {"object": "list", "data": []}
+        assert len(responses.calls) == 1
