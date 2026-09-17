@@ -81,7 +81,7 @@ export const getLawArticleSlashMenuItems = (
       ]);
     },
     aliases: ['law', 'article', 'loi', 'legifrance', 'droit'],
-    group: 'Advanced',
+    group,
     icon: <Icon iconName="balance" variant="symbols-outlined" $size="18px" />,
     subtext: t('Search and insert a law article'),
   },
