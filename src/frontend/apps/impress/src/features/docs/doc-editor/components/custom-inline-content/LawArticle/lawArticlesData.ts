@@ -8,7 +8,37 @@ export type LawArticleResult = {
   lawSourceUrl: string;
   lawDate: string;
   lawStatus: string;
+  // AI-generated summary of `lawText` (see `AlbertApiClient._summarize_all`
+  // on the backend), capped at ~80 characters for the dropdown preview.
+  // Undefined if the backend couldn't generate one.
+  lawSummary?: string;
+  // Raw Légifrance category from `chunk.metadata.category` (eg. "LOI",
+  // "CODE", "DECRET"), used to build the result tabs. Empty if missing.
+  lawCategory: string;
 };
+
+// Légifrance category codes to their human-readable French label, used for
+// the search-result tabs. A category with no entry here falls back to a
+// title-cased version of its raw code (see `formatCategoryLabel`).
+export const CATEGORY_LABELS: Record<string, string> = {
+  LOI: 'Loi',
+  CODE: 'Code',
+  DECRET: 'Décret',
+  ORDONNANCE: 'Ordonnance',
+  ARRETE: 'Arrêté',
+  ACCORD_FONCTION_PUBLIQUE: 'Accord',
+};
+
+// Formats a raw category code (eg. "ACCORD_FONCTION_PUBLIQUE") as a French
+// label, falling back to a readable guess for codes not in
+// `CATEGORY_LABELS` so new Légifrance categories don't break the tabs.
+export const formatCategoryLabel = (category: string): string =>
+  CATEGORY_LABELS[category] ??
+  category
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 
 /**
  * Raw shape returned by the `/law-search/` endpoint, which itself proxies
@@ -19,6 +49,9 @@ export type LawArticleResult = {
 export type LawApiResult = {
   method: string;
   score: number;
+  // AI-generated summary added by the backend (see
+  // `AlbertApiClient._summarize_all`); absent/undefined if generation failed.
+  summary?: string | null;
   chunk: {
     id: number;
     document_id: number;
@@ -115,6 +148,8 @@ export const parseLawApiResult = (result: LawApiResult): LawArticleResult => {
     lawSourceUrl: buildLegifranceUrl(getMetadataString(metadata, '_doc_id')),
     lawDate: getMetadataString(metadata, 'start_date') ?? '',
     lawStatus: status ? (STATUS_LABELS[status] ?? status) : '',
+    lawSummary: result.summary ?? undefined,
+    lawCategory: getMetadataString(metadata, 'category') ?? '',
   };
 };
 

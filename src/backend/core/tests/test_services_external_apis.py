@@ -186,3 +186,83 @@ class TestAlbertApiClient:
 
         assert result == {"object": "list", "data": []}
         assert len(responses.calls) == 1
+
+    @responses.activate
+    def test_search_legifrance_summarizes_article_body_only(self):
+        """Each result should get a `summary` of its body, title excluded."""
+        responses.post(
+            "https://albert.example.com/v1/search",
+            json={
+                "object": "list",
+                "data": [
+                    {
+                        "chunk": {
+                            "content": "Code de la route - Article R412-6\n"
+                            "Tout conducteur doit se tenir en état [...]"
+                        }
+                    }
+                ],
+            },
+        )
+        responses.post(
+            "https://albert.example.com/v1/rerank",
+            json={"results": [{"index": 0, "relevance_score": 0.9}]},
+        )
+        mocked_summary = responses.post(
+            "https://albert.example.com/v1/chat/completions",
+            json={"choices": [{"message": {"content": "Résumé court."}}]},
+        )
+
+        result = AlbertApiClient().search_legifrance("route")
+
+        summary_body = json.loads(mocked_summary.calls[0].request.body)
+        assert summary_body["model"] == "ministral-3-8b-instruct-2512"
+        assert summary_body["messages"][-1] == {
+            "role": "user",
+            "content": "Tout conducteur doit se tenir en état [...]",
+        }
+        assert result["data"][0]["summary"] == "Résumé court."
+
+    @responses.activate
+    def test_search_legifrance_summary_failure_is_swallowed(self):
+        """A failed summary call should leave `summary` unset, not raise."""
+        responses.post(
+            "https://albert.example.com/v1/search",
+            json={
+                "object": "list",
+                "data": [{"chunk": {"content": "Title\nSome article body."}}],
+            },
+        )
+        responses.post(
+            "https://albert.example.com/v1/rerank",
+            json={"results": [{"index": 0, "relevance_score": 0.9}]},
+        )
+        responses.post(
+            "https://albert.example.com/v1/chat/completions",
+            json={"error": "boom"},
+            status=500,
+        )
+
+        result = AlbertApiClient().search_legifrance("route")
+
+        assert result["data"][0]["summary"] is None
+
+    @responses.activate
+    def test_search_legifrance_skips_summary_when_no_body(self):
+        """A chunk with no body (no title/body separator) should not be summarized."""
+        responses.post(
+            "https://albert.example.com/v1/search",
+            json={
+                "object": "list",
+                "data": [{"chunk": {"content": "Title only, no newline"}}],
+            },
+        )
+        responses.post(
+            "https://albert.example.com/v1/rerank",
+            json={"results": [{"index": 0, "relevance_score": 0.9}]},
+        )
+
+        result = AlbertApiClient().search_legifrance("route")
+
+        assert result["data"][0]["summary"] is None
+        assert len(responses.calls) == 2

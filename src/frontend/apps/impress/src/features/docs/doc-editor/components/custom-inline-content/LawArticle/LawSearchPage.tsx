@@ -14,9 +14,25 @@ import { useResponsiveStore } from '@/stores';
 import { LawInlineContentType } from './LawInlineContent';
 import {
   LawArticleResult,
+  formatCategoryLabel,
   getFirstSentence,
   searchLawArticles,
 } from './lawArticlesData';
+
+// Sentinel value for the "Tout" tab, which shows every result regardless of
+// category.
+const ALL_CATEGORIES = '';
+
+// Icon shown next to each result, based on its Légifrance category. Falls
+// back to a generic document icon for categories with no dedicated icon.
+const CATEGORY_ICONS: Record<string, string> = {
+  LOI: 'gavel',
+  CODE: 'menu_book',
+  DECRET: 'description',
+  ORDONNANCE: 'description',
+  ARRETE: 'description',
+};
+const DEFAULT_CATEGORY_ICON = 'article';
 
 // Formats a `YYYY-MM-DD` law date (eg. "2016-10-01") as a French date (eg.
 // "1 octobre 2016"). Falls back to the raw value if it doesn't parse.
@@ -70,6 +86,7 @@ export const LawSearchPage = ({
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState(false);
   const [popoverOpened, setPopoverOpened] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
   const debounceSearch = useDebouncedCallback(setDebouncedSearch, 300);
   const { isDesktop } = useResponsiveStore();
   const isEditable = editor.isEditable;
@@ -98,6 +115,9 @@ export const LawSearchPage = ({
         if (!cancelled) {
           setResults(articles);
           setLoading(false);
+          // A new set of results may not contain the previously selected
+          // category, so fall back to "Tout" rather than show an empty list.
+          setSelectedCategory(ALL_CATEGORIES);
         }
       })
       .catch(() => {
@@ -112,6 +132,22 @@ export const LawSearchPage = ({
       cancelled = true;
     };
   }, [debouncedSearch]);
+
+  // Tabs are built from the categories actually present in the current
+  // results (in the order they first appear), not a fixed list, since only
+  // a handful of Légifrance categories (LOI, CODE, DECRET, ...) typically
+  // show up for a given query.
+  const categories: string[] = [];
+  for (const article of results) {
+    if (article.lawCategory && !categories.includes(article.lawCategory)) {
+      categories.push(article.lawCategory);
+    }
+  }
+
+  const filteredResults =
+    selectedCategory === ALL_CATEGORIES
+      ? results
+      : results.filter((article) => article.lawCategory === selectedCategory);
 
   /**
    * Cancels the search: marks this inline content `disabled` (see
@@ -329,168 +365,276 @@ export const LawSearchPage = ({
                   background: var(
                     --c--contextuals--background--surface--primary
                   );
-                  max-height: 280px;
-                  overflow-y: auto;
-                  overflow-x: hidden;
+                  overflow: hidden;
                 `}
                 $margin="sm"
                 $padding="none"
               >
-                {loading && (
-                  <Box $padding="sm">
-                    <Text
-                      $size="sm"
-                      $color="var(--c--contextuals--content--semantic--neutral--tertiary)"
-                    >
-                      {t('Searching...')}
-                    </Text>
-                  </Box>
-                )}
-
-                {!loading && searchError && (
-                  <Box $padding="sm">
-                    <Text
-                      $size="sm"
-                      $color="var(--c--contextuals--content--semantic--error--primary)"
-                    >
-                      {t('Law article search failed, please try again')}
-                    </Text>
-                  </Box>
-                )}
-
-                {!loading && !searchError && results.length === 0 && (
-                  <Box $padding="sm">
-                    <Text
-                      $size="sm"
-                      $color="var(--c--contextuals--content--semantic--neutral--tertiary)"
-                    >
-                      {t('No law article found')}
-                    </Text>
-                  </Box>
-                )}
-
-                {!loading &&
-                  results.map((article, index) => (
-                    <Box
-                      key={`${article.lawSourceUrl}-${index}`}
-                      role="option"
-                      aria-selected={index === 0}
-                      $direction="row"
-                      $align="flex-start"
-                      $justify="space-between"
-                      $gap="0.4rem"
-                      $width="100%"
-                      $padding="sm"
-                      $css={css`
-                        text-align: left;
-                        min-width: 0;
-                        max-width: 100%;
-                        box-sizing: border-box;
-
-                        &:hover,
-                        &:focus-within {
-                          background-color: var(
-                            --c--contextuals--background--semantic--contextual--primary
-                          );
-                        }
-
-                        &:hover .law-article-result-actions,
-                        &:focus-within .law-article-result-actions {
-                          opacity: 1;
-                          pointer-events: auto;
-                        }
-                      `}
-                    >
+                <Box
+                  $direction="row"
+                  $align="center"
+                  $justify="space-between"
+                  $gap="0.5rem"
+                  $padding={{ horizontal: 'sm', vertical: '3xs' }}
+                  $css={css`
+                    border-bottom: 1px solid
+                      var(--c--contextuals--border--surface--primary);
+                  `}
+                >
+                  <Box
+                    role="tablist"
+                    aria-label={t('Result categories')}
+                    $direction="row"
+                    $align="center"
+                    $gap="0.9rem"
+                    $css={css`
+                      overflow-x: auto;
+                    `}
+                  >
+                    {[ALL_CATEGORIES, ...categories].map((category) => (
                       <Box
-                        $direction="column"
-                        $align="flex-start"
-                        $gap="0.2rem"
+                        key={category || 'all'}
+                        as="button"
+                        type="button"
+                        role="tab"
+                        aria-selected={selectedCategory === category}
+                        onClick={() => setSelectedCategory(category)}
+                        $padding={{ vertical: 'xs' }}
                         $css={css`
-                          min-width: 0;
-                          flex: 1;
+                          background: none;
+                          border: none;
+                          border-bottom: 2px solid
+                            ${selectedCategory === category
+                              ? 'var(--c--contextuals--content--semantic--neutral--primary)'
+                              : 'transparent'};
+                          color: ${selectedCategory === category
+                            ? 'var(--c--contextuals--content--semantic--neutral--primary)'
+                            : 'var(--c--contextuals--content--semantic--neutral--tertiary)'};
+                          font-size: var(--c--globals--font--sizes--sm);
+                          font-weight: ${selectedCategory === category
+                            ? 600
+                            : 400};
+                          white-space: nowrap;
+                          cursor: pointer;
                         `}
                       >
-                        <Text $size="sm" $weight="600">
-                          {article.lawTitle}
-                        </Text>
-                        <Text
-                          $size="xs"
-                          $color="var(--c--contextuals--content--semantic--neutral--tertiary)"
+                        {category === ALL_CATEGORIES
+                          ? t('All')
+                          : formatCategoryLabel(category)}
+                      </Box>
+                    ))}
+                  </Box>
+                  <Box
+                    as="button"
+                    type="button"
+                    title={t('Close')}
+                    aria-label={t('Close')}
+                    onClick={() => closeSearch('')}
+                    $css={css`
+                      display: inline-flex;
+                      flex-shrink: 0;
+                      background: none;
+                      border: none;
+                      cursor: pointer;
+                    `}
+                  >
+                    <Icon iconName="close" $size="18px" />
+                  </Box>
+                </Box>
+
+                <Box
+                  $css={css`
+                    max-height: 280px;
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                  `}
+                >
+                  {loading && (
+                    <Box $padding="sm">
+                      <Text
+                        $size="sm"
+                        $color="var(--c--contextuals--content--semantic--neutral--tertiary)"
+                      >
+                        {t('Searching...')}
+                      </Text>
+                    </Box>
+                  )}
+
+                  {!loading && searchError && (
+                    <Box $padding="sm">
+                      <Text
+                        $size="sm"
+                        $color="var(--c--contextuals--content--semantic--error--primary)"
+                      >
+                        {t('Law article search failed, please try again')}
+                      </Text>
+                    </Box>
+                  )}
+
+                  {!loading && !searchError && filteredResults.length === 0 && (
+                    <Box $padding="sm">
+                      <Text
+                        $size="sm"
+                        $color="var(--c--contextuals--content--semantic--neutral--tertiary)"
+                      >
+                        {t('No law article found')}
+                      </Text>
+                    </Box>
+                  )}
+
+                  {!loading &&
+                    filteredResults.map((article, index) => (
+                      <Box
+                        key={`${article.lawSourceUrl}-${index}`}
+                        role="option"
+                        aria-selected={index === 0}
+                        $direction="row"
+                        $align="flex-start"
+                        $justify="space-between"
+                        $gap="0.4rem"
+                        $width="100%"
+                        $padding="sm"
+                        $css={css`
+                          text-align: left;
+                          min-width: 0;
+                          max-width: 100%;
+                          box-sizing: border-box;
+
+                          &:hover,
+                          &:focus-within {
+                            background-color: var(
+                              --c--contextuals--background--semantic--contextual--primary
+                            );
+                          }
+
+                          &:hover .law-article-result-actions,
+                          &:focus-within .law-article-result-actions {
+                            opacity: 1;
+                            pointer-events: auto;
+                          }
+                        `}
+                      >
+                        <Box
+                          $direction="row"
+                          $align="flex-start"
+                          $gap="0.5rem"
                           $css={css`
-                            width: 100%;
-                            white-space: normal;
-                            overflow-wrap: break-word;
-                            display: -webkit-box;
-                            -webkit-line-clamp: 2;
-                            -webkit-box-orient: vertical;
-                            overflow: hidden;
+                            min-width: 0;
+                            flex: 1;
                           `}
                         >
-                          {getFirstSentence(article.lawText)}
-                        </Text>
-                      </Box>
-                      <Box
-                        className="law-article-result-actions"
-                        $direction="row"
-                        $gap="0.2rem"
-                        $css={css`
-                          flex-shrink: 0;
-                          opacity: 0;
-                          pointer-events: none;
-                          transition: opacity 0.15s ease;
-                        `}
-                      >
-                        {(['title', 'titleDate', 'full'] as const).map(
-                          (mode) => (
-                            <Box
-                              key={mode}
-                              as="button"
-                              type="button"
-                              title={
-                                mode === 'title'
-                                  ? t('Insert as a linked title')
-                                  : mode === 'full'
-                                    ? t('Insert as full text')
-                                    : t('Insert as a linked title with date')
+                          <Box
+                            aria-hidden="true"
+                            $css={css`
+                              flex-shrink: 0;
+                              margin-top: 2px;
+                              color: var(
+                                --c--contextuals--content--semantic--neutral--tertiary
+                              );
+                            `}
+                          >
+                            <Icon
+                              iconName={
+                                CATEGORY_ICONS[article.lawCategory] ??
+                                DEFAULT_CATEGORY_ICON
                               }
-                              aria-label={
-                                mode === 'title'
-                                  ? t('Insert as a linked title')
-                                  : mode === 'full'
-                                    ? t('Insert as full text')
-                                    : t('Insert as a linked title with date')
-                              }
-                              onClick={() => selectArticle(article, mode)}
-                              $padding="3px"
+                              variant="symbols-outlined"
+                              $size="18px"
+                            />
+                          </Box>
+                          <Box
+                            $direction="column"
+                            $align="flex-start"
+                            $gap="0.2rem"
+                            $css={css`
+                              min-width: 0;
+                              flex: 1;
+                            `}
+                          >
+                            <Text $size="sm" $weight="600">
+                              {article.lawTitle}
+                            </Text>
+                            <Text
+                              $size="xs"
+                              $color="var(--c--contextuals--content--semantic--neutral--tertiary)"
                               $css={css`
-                                display: inline-flex;
-                                border: 1px solid
-                                  var(
-                                    --c--contextuals--border--surface--primary
-                                  );
-                                border-radius: 4px;
-                                cursor: pointer;
-                                background: var(
-                                  --c--contextuals--background--surface--primary
-                                );
+                                width: 100%;
+                                white-space: normal;
+                                overflow-wrap: break-word;
+                                display: -webkit-box;
+                                -webkit-line-clamp: 2;
+                                -webkit-box-orient: vertical;
+                                overflow: hidden;
                               `}
                             >
-                              <Icon
-                                iconName={
+                              {article.lawSummary ??
+                                getFirstSentence(article.lawText)}
+                            </Text>
+                          </Box>
+                        </Box>
+                        <Box
+                          className="law-article-result-actions"
+                          $direction="row"
+                          $gap="0.2rem"
+                          $css={css`
+                            flex-shrink: 0;
+                            opacity: 0;
+                            pointer-events: none;
+                            transition: opacity 0.15s ease;
+                          `}
+                        >
+                          {(['title', 'titleDate', 'full'] as const).map(
+                            (mode) => (
+                              <Box
+                                key={mode}
+                                as="button"
+                                type="button"
+                                title={
                                   mode === 'title'
-                                    ? 'link'
+                                    ? t('Insert as a linked title')
                                     : mode === 'full'
-                                      ? 'notes'
-                                      : 'crop_square'
+                                      ? t('Insert as full text')
+                                      : t('Insert as a linked title with date')
                                 }
-                                $size="16px"
-                              />
-                            </Box>
-                          ),
-                        )}
+                                aria-label={
+                                  mode === 'title'
+                                    ? t('Insert as a linked title')
+                                    : mode === 'full'
+                                      ? t('Insert as full text')
+                                      : t('Insert as a linked title with date')
+                                }
+                                onClick={() => selectArticle(article, mode)}
+                                $padding="3px"
+                                $css={css`
+                                  display: inline-flex;
+                                  border: 1px solid
+                                    var(
+                                      --c--contextuals--border--surface--primary
+                                    );
+                                  border-radius: 4px;
+                                  cursor: pointer;
+                                  background: var(
+                                    --c--contextuals--background--surface--primary
+                                  );
+                                `}
+                              >
+                                <Icon
+                                  iconName={
+                                    mode === 'title'
+                                      ? 'link'
+                                      : mode === 'full'
+                                        ? 'notes'
+                                        : 'crop_square'
+                                  }
+                                  $size="16px"
+                                />
+                              </Box>
+                            ),
+                          )}
+                        </Box>
                       </Box>
-                    </Box>
-                  ))}
+                    ))}
+                </Box>
               </Card>
             </Box>
           </Box>

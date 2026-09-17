@@ -946,6 +946,14 @@ class Base(Configuration):
         environ_name="ALBERT_RERANK_MODEL",
         environ_prefix=None,
     )
+    # Chat model used to generate short summaries of law search results.
+    # Ministral-3-8B is Albert's smallest/fastest chat model, well suited to
+    # this latency-sensitive, low-complexity task (fired for every result).
+    ALBERT_SUMMARY_MODEL = values.Value(
+        "ministral-3-8b-instruct-2512",
+        environ_name="ALBERT_SUMMARY_MODEL",
+        environ_prefix=None,
+    )
     LAW_SEARCH_FEATURE_ENABLED = values.BooleanValue(
         default=False,
         environ_name="LAW_SEARCH_FEATURE_ENABLED",
