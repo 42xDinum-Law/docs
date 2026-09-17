@@ -1,292 +1,96 @@
-<p align="center">
-  <a href="https://github.com/suitenumerique/docs">
-    <img alt="Docs" src="documentation/assets/banner-docs.png" width="100%" />
-  </a>
-</p>
+# `/law` - legal references inside Docs
 
-<p align="center">
-  <a href="https://github.com/suitenumerique/docs/stargazers/">
-    <img src="https://img.shields.io/github/stars/suitenumerique/docs" alt="">
-  </a>
-  <a href="https://github.com/suitenumerique/docs/blob/main/CONTRIBUTING.md">
-    <img alt="PRs Welcome" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg"/>
-  </a>
-  <a href="https://github.com/suitenumerique/docs/blob/main/LICENSE">
-    <img alt="MIT License" src="https://img.shields.io/github/license/suitenumerique/docs"/>
-  </a>
-  <a href="https://snyk.io/test/github/suitenumerique/docs">
-    <img alt="MIT License" src="https://snyk.io/test/github/suitenumerique/docs/badge.svg"/>
-  </a>
-  <a href="https://digitalpublicgoods.net/r/docs-collaborative-text-editing">
-    <img src="https://img.shields.io/badge/Verified-DPG-3333AB?logo=data:image/svg%2bxml;base64,PHN2ZyB3aWR0aD0iMzEiIGhlaWdodD0iMzMiIHZpZXdCb3g9IjAgMCAzMSAzMyIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTE0LjIwMDggMjEuMzY3OEwxMC4xNzM2IDE4LjAxMjRMMTEuNTIxOSAxNi40MDAzTDEzLjk5MjggMTguNDU5TDE5LjYyNjkgMTIuMjExMUwyMS4xOTA5IDEzLjYxNkwxNC4yMDA4IDIxLjM2NzhaTTI0LjYyNDEgOS4zNTEyN0wyNC44MDcxIDMuMDcyOTdMMTguODgxIDUuMTg2NjJMMTUuMzMxNCAtMi4zMzA4MmUtMDVMMTEuNzgyMSA1LjE4NjYyTDUuODU2MDEgMy4wNzI5N0w2LjAzOTA2IDkuMzUxMjdMMCAxMS4xMTc3TDMuODQ1MjEgMTYuMDg5NUwwIDIxLjA2MTJMNi4wMzkwNiAyMi44Mjc3TDUuODU2MDEgMjkuMTA2TDExLjc4MjEgMjYuOTkyM0wxNS4zMzE0IDMyLjE3OUwxOC44ODEgMjYuOTkyM0wyNC44MDcxIDI5LjEwNkwyNC42MjQxIDIyLjgyNzdMMzAuNjYzMSAyMS4wNjEyTDI2LjgxNzYgMTYuMDg5NUwzMC42NjMxIDExLjExNzdMMjQuNjI0MSA5LjM1MTI3WiIgZmlsbD0id2hpdGUiLz4KPC9zdmc+Cg==" alt="DPG Badge"/>
-  </a>
-</p>
+A slash command for [Docs](https://github.com/suitenumerique/docs) that searches French legal texts and inserts them into a document, without leaving the editor.
 
-<p align="center">
-  <a href="https://matrix.to/#/#docs-official:matrix.org">Chat on Matrix</a> •
-  <a href="documentation/">Documentation</a> •
-  <a href="#try-docs">Try Docs</a> •
-  <a href="mailto:docs@numerique.gouv.fr">Contact us</a>
-</p>
+Built during the DINUM x 42 Hackathon by Les slasheurs
+AI was used to generate an important part of the code.
+Figma designs are available [here](https://www.figma.com/design/mDkEb8Pl4A4DFeQ7Xez11d/Hackathon-Dinum-x-42-----Link-a-Law?node-id=0-1&t=ctJKVJ6adrDpoWmr-1)
 
-# La Suite Docs: Collaborative Text Editing
+# The need
 
-**Docs, where your notes can become knowledge through live collaboration.**
+Quoting the law is a common task for a civil servant, whether he/she produces regular text, delivers a watch note or respond to users' requests. Those agents do not always have specialized software (such as Solon-Edile, or those provided by private actors). Furthermore, they might want to keep using LaSuite Docs for those tasks, as it becomes their daily text processing tool.
 
-Docs is an open-source collaborative editor that helps teams write, organize, and share knowledge together - in real time.
+For instance, a decree (ministerial, prefectural or communal) opens with _visas_ to ground the decision. Those are a lengthy list of law references. Recovering them through copy-pasting of Legifrance is a cumbersome, lengthy and error-prone process.
 
-![Live collaboration demo](documentation/assets/mirabeau.png)
+# The solution
 
+1. The user types `/loi` (aliased with `/law`, `droit`, `legifrance`, `article`) anywhere in a doc
+2. A search field appears, where he/she types the query.
+3. Suggestions are provided and updated in a dropdown menu, and can be filtered by category (law, decree, ...)
+4. Each result is displayed with an icon to signify the category (same icon set as Legifrance), article title and a short AI-generated summary to facilitate identification
+5. On hovering, 3 action button appear, covering different insertion modalities : Legifrance link, Full text, Callout with a distinct aspect
 
-## What is Docs?
+Error messages are displayed in case of unreachable API.
 
-Docs is an open-source alternative to tools like Notion or Google Docs, focused on:
+# Architecture
 
-- Real-time collaboration
-- Clean, structured documents
-- Knowledge organization
-- Data ownership & self-hosting
+```mermaid
+flowchart LR
+    subgraph editor["Browser — BlockNote editor"]
+        slash["/law slash item"]
+        inline["lawArticleInline<br/>transient inline node"]
+        inserted["Inserted content<br/>linked title · callout · full text"]
+        downstream["Yjs collaboration<br/>DOCX / ODT / PDF export"]
+    end
 
-***Built for public organizations, companies, and open communities.***
+    subgraph backend["Docs backend — Django"]
+        view["LawSearchView<br/>GET /api/v1.0/law-search/?q="]
+        guards["IsAuthenticated<br/>LawSearchRateThrottle<br/>LAW_SEARCH_FEATURE_ENABLED"]
+        client["AlbertApiClient<br/>on ExternalAPIClient"]
+    end
 
-## Why use Docs?
+    subgraph albert["Albert API — Etalab"]
+        search["POST /search<br/>lexical · 50 hits · status=VIGUEUR"]
+        rerank["POST /rerank<br/>top 10"]
+        summarize["POST /chat/completions<br/>one-line summaries, in parallel"]
+    end
 
-### Writing
-
-- Rich-text & Markdown editing
-- Slash commands & block system
-- Beautiful formatting
-- Offline editing
-- Optional AI writing helpers (rewrite, summarize, translate, fix typos)
-
-### Collaboration
-
-- Live cursors & presence
-- Comments & sharing
-- Granular access control
-
-### Knowledge management
-
-- Subpages & hierarchy
-- Searchable content
-
-### Presentations
-
-- Simple structure, based on delimiter (`---`)
-- Full screen option
-- PDF exports
-- Keyboard navigation
-- Start presention from a block
-- Presentation link
-
-![demo of slide mode in Docs](https://upload.wikimedia.org/wikipedia/commons/6/64/Docs%27_slidemode.gif?_=20260722173451)
-
-### Export/Import
-
-- Import to `.docx` and `.md`
-- Export to `.docx`, `.odt`, `.pdf`
-
-### AI features
-Docs has optional AI features. 
-They're model agnostic and gateway agnostic.
-You can either run your own or just use your AI provider. 
-The config only requires an API key and a URL.
-
-#### V1: You select, AI replaces 
-This version features a simple select and replace workflow. 
-Your selection is the context and the instruction for the model. 
-The AI feedback replaces your selection and is designed is optimized for Docs formatting.
-
-![Demo of Docs AI v1](documentation/assets/docs_ai_feature_v1.gif)
-
-#### V2: AI toolbar, AI cursor (beta)
-This version uses [BlockNote AI integration](https://www.blocknotejs.org/docs/features/ai). It features: 
-- an AI toolbar at selection in which you can prompt, accept, reject and iterate AI feedback
-- an AI cursor, which interacts with the document, just as another collaborator in your document
-- document context is used on top of the selection
-
-![Demo of Docs AI v2](documentation/assets/docs_ai_feature_v2.gif)
-
-
-### Interoperability
-Docs comes with a [resource server API](documentation/resource_server.md) and a [server to server API](https://github.com/suitenumerique/docs/blob/c647cb62f1cbf1af9841ae8cb3818e34bb566c9c/documentation/env.md#L76-L77) which allows for awesome integrations.
-
-#### A concrete example: [Meet](https://github.com/suitenumerique/meet/)'s transcriptions
-If you're running a Meet instance, with simple config (`DJANGO_SERVER_TO_SERVER_API_TOKENS`) you can push your meeting transcript to Docs and give access to the user who requested it.
-
-![transcript in Docs screenshot](documentation/assets/transcripts.png)
-
-## Try Docs
-
-Experience Docs instantly - no installation required.
-
-- 🔗 [Open a live demo document][demo]
-- 🌍 [Browse public instances][instances]
-
-[demo]: https://demo.docs.la-suite.eu/docs/6d1b6f7f-db33-4673-9277-4bf47b9881ec/
-[instances]: documentation/instances.md
-
-## Self-hosting
-
-Docs supports Kubernetes, Docker Compose, and community-provided methods such as Nix and YunoHost.
-
-Get started with self-hosting: [Installation guide](documentation/installation/README.md)
-
-> [!WARNING]
-> Some advanced features (for example: `Export as PDF`) rely on XL packages from Blocknote.
-> These packages are licensed under GPL and are **not MIT-compatible**
->
-> You can run Docs **without these packages** by building with:
->
-> ```bash
-> PUBLISH_AS_MIT=true
-> ```
->
-> This builds an image of Docs without non-MIT features.
->
-> More details can be found in [environment variables](documentation/env.md)
-
-## Local Development (for contributors)
-
-Run Docs locally for development and testing.
-
-> [!WARNING]
-> This setup is intended **for development and testing only**.
-> It uses Minio as an S3-compatible storage backend, but any S3-compatible service can be used.
-
-### Prerequisites
-
-- Docker
-- Docker Compose
-- GNU Make
-
-Verify installation:
-
-```bash
-docker -v
-docker compose version
+    slash --> inline
+    inline -->|"query, debounced 300 ms"| view
+    view --> guards
+    guards --> client
+    client --> search
+    search --> rerank
+    rerank --> summarize
+    summarize -->|"ranked results + summaries"| client
+    client -->|"JSON"| inline
+    inline -->|"user picks an insertion mode"| inserted
+    inserted -.->|"standard BlockNote content only"| downstream
 ```
 
-> If you encounter permission errors, you may need to use `sudo`, or add your user to the `docker` group.
+## Key points
 
-### Bootstrap the project
+- Albert API is used with a reranker to improve data recall and relevancy
+- Dedicated throttle (20/min, 200/h, 1000/day): current threshold was too limitative
+- No need to persist through Yjs, as search node is transient
+- External API client in `core/services/external_apis/base.py` could be reused in case of adding another source
+- Content is internationalized (fr, en)
+- Only active texts are retrieved
 
-The easiest way to start is using GNU Make:
+## Configuration
 
-```bash
-make bootstrap FLUSH_ARGS='--no-input'
-```
+|Variable|Default|
+|:--|:--|
+|`LAW_SEARCH_FEATURE_ENABLED`|`False`|
+|`ALBERT_API_KEY`|-|
+|`ALBERT_API_BASE_URL`|`https://albert.api.etalab.gouv.fr/v1`|
+|`LAW_SEARCH_LEGIFRANCE_COLLECTION_ID`|no default, use 1126|
+|`ALBERT_RERANK_MODEL`|`openweight-rerank`|
+|`ALBERT_SUMMARY_MODEL`|`ministral-3-8b-instruct-2512`|
+|`ALBERT_API_TIMEOUT`|10|
 
-This builds the `app-dev` and `frontend-dev` containers, installs dependencies, runs database migrations, and compiles translations.
+# Known limitations
 
-It is recommended to run this command after pulling new code.
+- Albert API calls performance (currently up to 10 calls per search) can be improved with Redis caching
+- Current insert actions require extra formatting to match law formatting rules
+- Accessibility : arrow navigation is not enabled, aria-live is not updated during search
+- No pagination : 10 results are returned
 
-Start services:
+# Possible extensions and improvements
 
-```bash
-make run
-```
-
-Open <https://localhost:3000>
-
-Default credentials (development only):
-
-```md
-username: impress
-password: impress
-```
-
-### Frontend development mode
-
-For frontend work, running outside Docker is often more convenient:
-
-```bash
-make frontend-development-install
-make run-frontend-development
-```
-
-### Backend only
-
-Starting all services except the frontend container:
-
-```bash
-make run-backend
-```
-
-### Tests & Linting
-
-```bash
-make frontend-test
-make frontend-lint
-```
-
-Backend tests can be run without docker. This is useful to configure PyCharm or VSCode to do it. 
-Removing docker for testing requires to overwrite some URL and port values that are different in and out of 
-Docker. `env.d/development/common` contains all variables, some of them having to be overwritten by those in
-`env.d/development/common.test`.
-
-### Demo content
-
-Create a basic demo site:
-
-```bash
-make demo
-```
-
-### More Make targets
-
-To check all available Make rules:
-
-```bash
-make help
-```
-
-### Django admin
-
-Create a superuser:
-
-```bash
-make superuser
-```
-
-Admin UI: <http://localhost:8071/admin>
-
-## Contributing
-
-This project is community-driven and PRs are welcome.
-
-- [Contribution guide](CONTRIBUTING.md)
-- [Translations](https://crowdin.com/project/lasuite-docs)
-- [Chat with us!](https://matrix.to/#/#docs-official:matrix.org)
-
-## Roadmap
-
-Curious where Docs is headed?
-
-Explore upcoming features, priorities and long-term direction on our [public roadmap](https://docs.numerique.gouv.fr/docs/d1d3788e-c619-41ff-abe8-2d079da2f084/).
-
-## License 📝
-
-This work is released under the MIT License (see [LICENSE](https://github.com/suitenumerique/docs/blob/main/LICENSE)).
-
-While Docs is a public-driven initiative, our license choice is an invitation for private sector actors to use, sell and contribute to the project.
-
-## Credits ❤️
-
-### Stack
-
-Docs is built on top of [Django Rest Framework](https://www.django-rest-framework.org/), [Next.js](https://nextjs.org/), [ProseMirror](https://prosemirror.net/), [BlockNote.js](https://www.blocknotejs.org/), [HocusPocus](https://tiptap.dev/docs/hocuspocus/introduction), and [Yjs](https://yjs.dev/). We thank the contributors of all these projects for their awesome work!
-
-We are proud sponsors of [BlockNotejs](https://www.blocknotejs.org/) and [Yjs](https://yjs.dev/).
-
----
-
-### Gov ❤️ open source
-
-Docs is the result of a joint initiative led by the French 🇫🇷 ([DINUM](https://www.numerique.gouv.fr/dinum/)) Government and German 🇩🇪 government ([ZenDiS](https://zendis.de/)).
-
-We are always looking for new public partners (we are currently onboarding the Netherlands 🇳🇱), feel free to [contact us](mailto:docs@numerique.gouv.fr) if you are interested in using or contributing to Docs.
-
-<p align="center">
-  <img src="documentation/assets/europe_opensource.png" width="50%"/ alt="Europe Opensource">
-</p>
+- Simplify the addition of a new source through abstraction : strive to normalize results in backend as most external API usage could boil down to a search -> insert pattern
+- Extend support to other collections of Albert API and other APIs (Sirene, Base Adresse Nationale, ...) 
+- Extend support for law references from other countries using Docs (Germany, Netherlands)
+- Add sub-actions : displaying diff with previous version of the text, summarize the article with AI
+- Improve callout rendering
+- Enabling metrics in Posthog (i.e search without insert)
