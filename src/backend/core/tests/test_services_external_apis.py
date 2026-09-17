@@ -224,6 +224,40 @@ class TestAlbertApiClient:
         assert result["data"][0]["summary"] == "Résumé court."
 
     @responses.activate
+    def test_search_legifrance_summary_strips_markdown(self):
+        """Markdown emphasis/heading markers slipped by the model are stripped."""
+        responses.post(
+            "https://albert.example.com/v1/search",
+            json={
+                "object": "list",
+                "data": [
+                    {
+                        "chunk": {
+                            "content": "Code de la route - Article R412-6\n"
+                            "Tout conducteur doit se tenir en état [...]"
+                        }
+                    }
+                ],
+            },
+        )
+        responses.post(
+            "https://albert.example.com/v1/rerank",
+            json={"results": [{"index": 0, "relevance_score": 0.9}]},
+        )
+        responses.post(
+            "https://albert.example.com/v1/chat/completions",
+            json={
+                "choices": [
+                    {"message": {"content": "**Résumé** en _italique_ avec `code`."}}
+                ]
+            },
+        )
+
+        result = AlbertApiClient().search_legifrance("route")
+
+        assert result["data"][0]["summary"] == "Résumé en italique avec code."
+
+    @responses.activate
     def test_search_legifrance_summary_failure_is_swallowed(self):
         """A failed summary call should leave `summary` unset, not raise."""
         responses.post(

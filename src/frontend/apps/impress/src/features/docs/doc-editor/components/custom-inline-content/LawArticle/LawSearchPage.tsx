@@ -210,13 +210,17 @@ export const LawSearchPage = ({
     }
 
     if (mode === 'titleDate') {
+      // Title and date each get their own line (the callout renders with
+      // `white-space: pre-wrap`, see CalloutBlock, so newlines are real line
+      // breaks), then a blank line before the body for breathing room.
       const titleDateContent = [
         { type: 'text' as const, text: article.lawTitle, styles: { bold: true } },
         ...(article.lawDate
           ? [
+              { type: 'text' as const, text: '\n', styles: {} },
               {
                 type: 'text' as const,
-                text: ` (${formatLawDate(article.lawDate)})`,
+                text: `(${formatLawDate(article.lawDate)})`,
                 styles: { italic: true, textColor: 'gray' as const },
               },
             ]
@@ -240,7 +244,7 @@ export const LawSearchPage = ({
             props: { backgroundColor: 'gray', emoji: '⚖️' },
             content: [
               ...titleDateNodes,
-              { type: 'text', text: `\n${article.lawText}`, styles: {} },
+              { type: 'text', text: `\n\n${article.lawText}`, styles: {} },
             ],
           },
         ],
@@ -336,9 +340,9 @@ export const LawSearchPage = ({
         </Popover.Target>
         <Popover.Dropdown>
           <Box
-            $minWidth={isDesktop ? '330px' : '220px'}
-            $maxWidth="420px"
-            $width="fit-content"
+            $minWidth={isDesktop ? '480px' : '280px'}
+            $maxWidth="90vw"
+            $width={isDesktop ? '560px' : 'fit-content'}
             $zIndex="10"
             $css={css`
               position: relative;
@@ -382,8 +386,8 @@ export const LawSearchPage = ({
                   `}
                 >
                   <Box
-                    role="tablist"
-                    aria-label={t('Result categories')}
+                    role="group"
+                    aria-label={t('Filter results by category')}
                     $direction="row"
                     $align="center"
                     $gap="0.9rem"
@@ -396,8 +400,7 @@ export const LawSearchPage = ({
                         key={category || 'all'}
                         as="button"
                         type="button"
-                        role="tab"
-                        aria-selected={selectedCategory === category}
+                        aria-pressed={selectedCategory === category}
                         onClick={() => setSelectedCategory(category)}
                         $padding={{ vertical: 'xs' }}
                         $css={css`
@@ -552,6 +555,12 @@ export const LawSearchPage = ({
                             `}
                           >
                             <Text $size="sm" $weight="600">
+                              {article.lawCategory && (
+                                <span className="sr-only">
+                                  {formatCategoryLabel(article.lawCategory)}
+                                  {' — '}
+                                </span>
+                              )}
                               {article.lawTitle}
                             </Text>
                             <Text

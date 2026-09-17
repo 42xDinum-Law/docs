@@ -1,6 +1,7 @@
 """Client for the Albert API (Etalab), used here to search the Légifrance collection."""
 
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 
@@ -24,9 +25,21 @@ RERANK_TOP_N = 10
 SUMMARY_SYSTEM_PROMPT = (
     "Tu résumes des articles de loi français pour un menu de recherche. "
     "Réponds uniquement par un résumé d'une phrase, en français, sans "
-    "introduction ni guillemets, de 80 caractères maximum."
+    "introduction ni guillemets, de 80 caractères maximum, en texte brut "
+    "sans aucune mise en forme markdown (pas de **gras**, *italique*, "
+    "listes ou titres)."
 )
 SUMMARY_MAX_TOKENS = 50
+
+# Strips the markdown emphasis/code/heading/list markers a chat model can
+# still slip in despite the plain-text instruction in `SUMMARY_SYSTEM_PROMPT`,
+# so the dropdown never shows literal "**bold**" or "# heading" characters.
+_MARKDOWN_MARKERS_RE = re.compile(r"(\*\*|__|[*_`#]+)")
+
+
+def _strip_markdown(text: str) -> str:
+    """Removes common inline/heading markdown markers from a short summary."""
+    return _MARKDOWN_MARKERS_RE.sub("", text).strip()
 
 
 class AlbertApiClient(ExternalAPIClient):
@@ -146,7 +159,7 @@ class AlbertApiClient(ExternalAPIClient):
                     ],
                 },
             )
-            return response["choices"][0]["message"]["content"].strip()
+            return _strip_markdown(response["choices"][0]["message"]["content"])
         except (ExternalAPIError, KeyError, IndexError):
             logger.exception("Law article summary generation failed")
             return None
