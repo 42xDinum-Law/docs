@@ -72,7 +72,10 @@ const AIMenuController = BlockNoteAI?.AIMenuController;
 const useAI = BlockNoteAI?.useAI;
 const localesBNAI = BlockNoteAI?.localesAI || {};
 import { createSafeCodeBlockSpec } from './custom-blocks/CodeBlock';
-import { InterlinkingLinkInlineContent } from './custom-inline-content';
+import {
+  InterlinkingLinkInlineContent,
+  LawArticleInlineContent,
+} from './custom-inline-content';
 import XLMultiColumn from './xl-multi-column';
 
 const localesBNMultiColumn = XLMultiColumn?.locales;
@@ -92,6 +95,7 @@ const baseBlockNoteSchema = withPageBreak(
     inlineContentSpecs: {
       ...defaultInlineContentSpecs,
       interlinkingLinkInline: InterlinkingLinkInlineContent,
+      lawArticleInline: LawArticleInlineContent,
       math: createReactInlineMathSpec(),
     },
   }),
@@ -143,6 +147,7 @@ export const BlockNoteEditor = ({ doc, provider }: BlockNoteEditorProps) => {
     doc.abilities?.ai_proxy
   );
   const aiExtension = useAI?.(doc.id, aiBlockNoteAllowed);
+  const lawSearchAllowed = !!conf?.LAW_SEARCH_FEATURE_ENABLED;
 
   const collabName = user?.full_name || user?.email;
   const cursorName = collabName || t('Anonymous');
@@ -346,7 +351,10 @@ export const BlockNoteEditor = ({ doc, provider }: BlockNoteEditorProps) => {
         {aiBlockNoteAllowed && AIMenuController && AIMenu && (
           <AIMenuController aiMenu={AIMenu} />
         )}
-        <BlockNoteSuggestionMenu aiAllowed={aiBlockNoteAllowed} />
+        <BlockNoteSuggestionMenu
+          aiAllowed={aiBlockNoteAllowed}
+          lawSearchAllowed={lawSearchAllowed}
+        />
         <BlockNoteToolbar aiAllowed={aiBlockNoteAllowed} />
         <DocsSideMenu />
         {showComments && <FloatingComposerController />}
