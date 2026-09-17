@@ -24,10 +24,9 @@ import {
   getCalloutReactSlashMenuItems,
   getPdfReactSlashMenuItems,
 } from './custom-blocks';
-import {
-  getLawArticleMenuItems,
-  useGetInterlinkingMenuItems,
-} from './custom-inline-content';
+import { useGetInterlinkingMenuItems } from './custom-inline-content';
+import { getApiSearchSlashMenuItems } from './custom-inline-content/api_call';
+import { getLawArticleSlashMenuItems } from './custom-inline-content/LawArticle';
 import XLMultiColumn from './xl-multi-column';
 
 const getMultiColumnSlashMenuItems =
@@ -60,6 +59,7 @@ export const BlockNoteSuggestionMenu = ({
 
     const combinedMenu = combineByGroup(
       defaultMenu,
+      getApiSearchSlashMenuItems(editor, t, basicBlocksName),
       getPageBreakReactSlashMenuItems(editor),
       getMultiColumnSlashMenuItems?.(editor) || [],
       getPdfReactSlashMenuItems(editor, t, fileBlocksName),
@@ -79,7 +79,7 @@ export const BlockNoteSuggestionMenu = ({
       ...combinedMenu.slice(0, index + 1),
       ...getInterlinkingMenuItems(editor, t),
       ...(lawSearchAllowed
-        ? getLawArticleMenuItems(editor, t, t('Links'))
+        ? getLawArticleSlashMenuItems(editor, t, t('Links'))
         : []),
       ...combinedMenu.slice(index + 1),
     ];

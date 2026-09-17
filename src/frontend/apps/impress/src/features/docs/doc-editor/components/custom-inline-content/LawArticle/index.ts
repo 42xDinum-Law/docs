@@ -1,2 +1,1 @@
-export * from './LawArticleInlineContent';
-export * from './LawSearchPage';
+export * from './LawInlineContent';

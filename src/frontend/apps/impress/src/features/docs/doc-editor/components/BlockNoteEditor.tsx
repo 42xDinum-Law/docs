@@ -67,15 +67,14 @@ import { BlockNoteSuggestionMenu } from './BlockNoteSuggestionMenu';
 import { BlockNoteToolbar } from './BlockNoteToolBar/BlockNoteToolbar';
 import { DocsSideMenu } from './DocsSideMenu/DocsSideMenu';
 import { CalloutBlock, PdfBlock, UploadLoaderBlock } from './custom-blocks';
+import { ApiSearchBlock } from './custom-inline-content/api_call';
+import { LawInlineContent } from './custom-inline-content/LawArticle';
 const AIMenu = BlockNoteAI?.AIMenu;
 const AIMenuController = BlockNoteAI?.AIMenuController;
 const useAI = BlockNoteAI?.useAI;
 const localesBNAI = BlockNoteAI?.localesAI || {};
 import { createSafeCodeBlockSpec } from './custom-blocks/CodeBlock';
-import {
-  InterlinkingLinkInlineContent,
-  LawArticleInlineContent,
-} from './custom-inline-content';
+import { InterlinkingLinkInlineContent } from './custom-inline-content';
 import XLMultiColumn from './xl-multi-column';
 
 const localesBNMultiColumn = XLMultiColumn?.locales;
@@ -85,6 +84,7 @@ const baseBlockNoteSchema = withPageBreak(
   BlockNoteSchema.create({
     blockSpecs: {
       ...defaultBlockSpecs,
+      apiSearch: ApiSearchBlock(),
       callout: CalloutBlock(),
       codeBlock: createSafeCodeBlockSpec(),
       diagram: createReactDiagramBlockSpec(),
@@ -95,7 +95,7 @@ const baseBlockNoteSchema = withPageBreak(
     inlineContentSpecs: {
       ...defaultInlineContentSpecs,
       interlinkingLinkInline: InterlinkingLinkInlineContent,
-      lawArticleInline: LawArticleInlineContent,
+      lawArticleInline: LawInlineContent,
       math: createReactInlineMathSpec(),
     },
   }),
