@@ -62,6 +62,7 @@ export interface ConfigResponse {
   FRONTEND_THEME?: Theme;
   LANGUAGES: [string, string][];
   LANGUAGE_CODE: string;
+  LAW_SEARCH_FEATURE_ENABLED?: boolean;
   MEDIA_BASE_URL?: string;
   POSTHOG_KEY?: PostHogConf['key'];
   POSTHOG_HOST?: PostHogConf['host'];

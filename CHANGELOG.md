@@ -8,6 +8,7 @@ and this project adheres to
 
 ### Added
 
+- ✨(fullstack) search and insert Légifrance law articles via the Albert API
 - 🔧(backend) fine tune redis cache options
 - ✨(frontend) make the full last-update date available #1215
 

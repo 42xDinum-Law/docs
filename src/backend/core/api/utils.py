@@ -199,6 +199,33 @@ class AIUserRateThrottle(AIBaseRateThrottle):
         )
 
 
+class LawSearchRateThrottle(AIBaseRateThrottle):
+    """Throttle for the law-search endpoint, kept separate from the AI budget.
+
+    Law search is a cheap, high-frequency lookup (fired on every debounced
+    keystroke), unlike AI generation, so it needs its own, more generous
+    rate limit instead of sharing (and competing for) AIUserRateThrottle's.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(settings.LAW_SEARCH_USER_RATE_THROTTLE_RATES)
+
+    def get_cache_key(self, request, view=None):
+        """Generate a cache key based on the user ID or IP for anonymous."""
+        if request.user.is_authenticated:
+            return f"user_{request.user.id!s}_throttle_law_search"
+        return f"anonymous_{self.get_ident(request)}_throttle_law_search"
+
+    def get_ident(self, request):
+        """Return the request IP address."""
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+        return (
+            x_forwarded_for.split(",")[0]
+            if x_forwarded_for
+            else request.META.get("REMOTE_ADDR")
+        )
+
+
 def get_content_metadata_cache_key(document_id):
     """Return the cache key used to store content metadata."""
     return f"docs:content-metadata:{document_id!s}"

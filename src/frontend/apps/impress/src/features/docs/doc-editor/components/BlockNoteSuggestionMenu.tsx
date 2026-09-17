@@ -25,6 +25,8 @@ import {
   getPdfReactSlashMenuItems,
 } from './custom-blocks';
 import { useGetInterlinkingMenuItems } from './custom-inline-content';
+import { getApiSearchSlashMenuItems } from './custom-inline-content/api_call';
+import { getLawArticleSlashMenuItems } from './custom-inline-content/LawArticle';
 import XLMultiColumn from './xl-multi-column';
 
 const getMultiColumnSlashMenuItems =
@@ -34,8 +36,10 @@ const getAISlashMenuItems = BlockNoteAI?.getAISlashMenuItems;
 
 export const BlockNoteSuggestionMenu = ({
   aiAllowed,
+  lawSearchAllowed,
 }: {
   aiAllowed: boolean;
+  lawSearchAllowed: boolean;
 }) => {
   const editor = useBlockNoteEditor<
     DocsBlockSchema,
@@ -55,6 +59,7 @@ export const BlockNoteSuggestionMenu = ({
 
     const combinedMenu = combineByGroup(
       defaultMenu,
+      getApiSearchSlashMenuItems(editor, t, basicBlocksName),
       getPageBreakReactSlashMenuItems(editor),
       getMultiColumnSlashMenuItems?.(editor) || [],
       getPdfReactSlashMenuItems(editor, t, fileBlocksName),
@@ -73,6 +78,9 @@ export const BlockNoteSuggestionMenu = ({
     const newSlashMenuItems = [
       ...combinedMenu.slice(0, index + 1),
       ...getInterlinkingMenuItems(editor, t),
+      ...(lawSearchAllowed
+        ? getLawArticleSlashMenuItems(editor, t, t('Links'))
+        : []),
       ...combinedMenu.slice(index + 1),
     ];
 
@@ -84,6 +92,7 @@ export const BlockNoteSuggestionMenu = ({
     fileBlocksName,
     basicBlocksName,
     aiAllowed,
+    lawSearchAllowed,
     getInterlinkingMenuItems,
   ]);
 

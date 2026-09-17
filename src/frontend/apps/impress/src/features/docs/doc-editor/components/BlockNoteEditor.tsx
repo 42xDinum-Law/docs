@@ -67,6 +67,8 @@ import { BlockNoteSuggestionMenu } from './BlockNoteSuggestionMenu';
 import { BlockNoteToolbar } from './BlockNoteToolBar/BlockNoteToolbar';
 import { DocsSideMenu } from './DocsSideMenu/DocsSideMenu';
 import { CalloutBlock, PdfBlock, UploadLoaderBlock } from './custom-blocks';
+import { ApiSearchBlock } from './custom-inline-content/api_call';
+import { LawInlineContent } from './custom-inline-content/LawArticle';
 const AIMenu = BlockNoteAI?.AIMenu;
 const AIMenuController = BlockNoteAI?.AIMenuController;
 const useAI = BlockNoteAI?.useAI;
@@ -82,6 +84,7 @@ const baseBlockNoteSchema = withPageBreak(
   BlockNoteSchema.create({
     blockSpecs: {
       ...defaultBlockSpecs,
+      apiSearch: ApiSearchBlock(),
       callout: CalloutBlock(),
       codeBlock: createSafeCodeBlockSpec(),
       diagram: createReactDiagramBlockSpec(),
@@ -92,6 +95,7 @@ const baseBlockNoteSchema = withPageBreak(
     inlineContentSpecs: {
       ...defaultInlineContentSpecs,
       interlinkingLinkInline: InterlinkingLinkInlineContent,
+      lawArticleInline: LawInlineContent,
       math: createReactInlineMathSpec(),
     },
   }),
@@ -143,6 +147,7 @@ export const BlockNoteEditor = ({ doc, provider }: BlockNoteEditorProps) => {
     doc.abilities?.ai_proxy
   );
   const aiExtension = useAI?.(doc.id, aiBlockNoteAllowed);
+  const lawSearchAllowed = !!conf?.LAW_SEARCH_FEATURE_ENABLED;
 
   const collabName = user?.full_name || user?.email;
   const cursorName = collabName || t('Anonymous');
@@ -346,7 +351,10 @@ export const BlockNoteEditor = ({ doc, provider }: BlockNoteEditorProps) => {
         {aiBlockNoteAllowed && AIMenuController && AIMenu && (
           <AIMenuController aiMenu={AIMenu} />
         )}
-        <BlockNoteSuggestionMenu aiAllowed={aiBlockNoteAllowed} />
+        <BlockNoteSuggestionMenu
+          aiAllowed={aiBlockNoteAllowed}
+          lawSearchAllowed={lawSearchAllowed}
+        />
         <BlockNoteToolbar aiAllowed={aiBlockNoteAllowed} />
         <DocsSideMenu />
         {showComments && <FloatingComposerController />}
