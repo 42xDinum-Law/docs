@@ -851,6 +851,12 @@ class AITranslateSerializer(serializers.Serializer):
         return value
 
 
+class LawSearchQuerySerializer(serializers.Serializer):
+    """Serializer for law search query parameters."""
+
+    q = serializers.CharField(min_length=1, max_length=500, required=True)
+
+
 class MoveDocumentSerializer(serializers.Serializer):
     """
     Serializer for validating input data to move a document within the tree structure.

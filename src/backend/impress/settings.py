@@ -926,6 +926,30 @@ class Base(Configuration):
         "day": 200,
     }
 
+    # External APIs settings
+    # Albert API (Etalab) - used for the law search feature (Légifrance collection)
+    ALBERT_API_BASE_URL = values.Value(
+        "https://albert.api.etalab.gouv.fr/v1",
+        environ_name="ALBERT_API_BASE_URL",
+        environ_prefix=None,
+    )
+    ALBERT_API_KEY = SecretFileValue(
+        None, environ_name="ALBERT_API_KEY", environ_prefix=None
+    )
+    ALBERT_API_TIMEOUT = values.IntegerValue(
+        10, environ_name="ALBERT_API_TIMEOUT", environ_prefix=None
+    )
+    LAW_SEARCH_FEATURE_ENABLED = values.BooleanValue(
+        default=False,
+        environ_name="LAW_SEARCH_FEATURE_ENABLED",
+        environ_prefix=None,
+    )
+    LAW_SEARCH_LEGIFRANCE_COLLECTION_ID = values.IntegerValue(
+        None,
+        environ_name="LAW_SEARCH_LEGIFRANCE_COLLECTION_ID",
+        environ_prefix=None,
+    )
+
     LANGFUSE_SECRET_KEY = SecretFileValue(
         None, environ_name="LANGFUSE_SECRET_KEY", environ_prefix=None
     )

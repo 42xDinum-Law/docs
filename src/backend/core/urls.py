@@ -82,6 +82,7 @@ urlpatterns = [
         ),
     ),
     path(f"api/{settings.API_VERSION}/config/", viewsets.ConfigView.as_view()),
+    path(f"api/{settings.API_VERSION}/law-search/", viewsets.LawSearchView.as_view()),
 ]
 
 if settings.OIDC_RESOURCE_SERVER_ENABLED:

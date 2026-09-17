@@ -44,7 +44,7 @@ from lasuite.tools.email import get_domain_from_email
 from pydantic import ValidationError as PydanticValidationError
 from rest_framework import filters, status, viewsets
 from rest_framework import response as drf_response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 from treebeard.exceptions import InvalidMoveToDescendant
 
@@ -54,6 +54,8 @@ from core.services import mime_types
 from core.services.ai_services.blocknote import AIService
 from core.services.ai_services.legacy import get_legacy_ai_service
 from core.services.collaboration_services import CollaborationService
+from core.services.external_apis.albert import get_albert_api_client
+from core.services.external_apis.base import ExternalAPIError
 from core.services.converter_services import (
     ConversionError,
     Converter,
@@ -3092,6 +3094,36 @@ class DocumentAskForAccessViewSet(
         return drf.response.Response(status=drf.status.HTTP_204_NO_CONTENT)
 
 
+class LawSearchView(drf.views.APIView):
+    """API View proxying law article search requests to the Albert API."""
+
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [utils.AIUserRateThrottle]
+
+    def get(self, request):
+        """
+        GET /api/v1.0/law-search/?q=<query>
+        Search in-force Légifrance texts (law articles) via the Albert API.
+        """
+        if not settings.LAW_SEARCH_FEATURE_ENABLED:
+            raise ValidationError("Law search feature is not enabled.")
+
+        serializer = serializers.LawSearchQuerySerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            result = get_albert_api_client().search_legifrance(
+                serializer.validated_data["q"]
+            )
+        except ExternalAPIError as err:
+            logger.exception("Law search request failed")
+            return drf.response.Response(
+                {"detail": str(err)}, status=drf.status.HTTP_502_BAD_GATEWAY
+            )
+
+        return drf.response.Response(result, status=drf.status.HTTP_200_OK)
+
+
 class ConfigView(drf.views.APIView):
     """API ViewSet for sharing some public settings."""
 
@@ -3121,6 +3153,7 @@ class ConfigView(drf.views.APIView):
             "FRONTEND_JS_URL",
             "FRONTEND_SILENT_LOGIN_ENABLED",
             "FRONTEND_THEME",
+            "LAW_SEARCH_FEATURE_ENABLED",
             "MEDIA_BASE_URL",
             "POSTHOG_KEY",
             "POSTHOG_HOST",
