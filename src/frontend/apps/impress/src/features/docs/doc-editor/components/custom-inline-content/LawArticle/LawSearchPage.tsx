@@ -34,6 +34,14 @@ const CATEGORY_ICONS: Record<string, string> = {
 };
 const DEFAULT_CATEGORY_ICON = 'article';
 
+// Formats a `Date` as a French date (eg. "1 octobre 2016").
+const formatFrenchDate = (date: Date): string =>
+  date.toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+
 // Formats a `YYYY-MM-DD` law date (eg. "2016-10-01") as a French date (eg.
 // "1 octobre 2016"). Falls back to the raw value if it doesn't parse.
 const formatLawDate = (isoDate: string): string => {
@@ -42,11 +50,7 @@ const formatLawDate = (isoDate: string): string => {
     return isoDate;
   }
 
-  return date.toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+  return formatFrenchDate(date);
 };
 
 const inputStyle = css`
@@ -210,32 +214,59 @@ export const LawSearchPage = ({
     }
 
     if (mode === 'titleDate') {
-      // Title and date each get their own line (the callout renders with
+      // Title, the promulgation/status line and the body each get their own
+      // paragraph, separated by a blank line (the callout renders with
       // `white-space: pre-wrap`, see CalloutBlock, so newlines are real line
-      // breaks), then a blank line before the body for breathing room.
-      const titleDateContent = [
-        { type: 'text' as const, text: article.lawTitle, styles: { bold: true } },
-        ...(article.lawDate
-          ? [
-              { type: 'text' as const, text: '\n', styles: {} },
-              {
-                type: 'text' as const,
-                text: `(${formatLawDate(article.lawDate)})`,
-                styles: { italic: true, textColor: 'gray' as const },
-              },
-            ]
-          : []),
-      ];
+      // breaks): the title (linked to the source) in bold, the date/status
+      // below it in plain text, then the italic body. This inserted text
+      // mirrors Légifrance's own wording, so it's in French regardless of
+      // the app's UI language, like the rest of the article's content.
+      const titleNode = {
+        type: 'text' as const,
+        text: article.lawTitle,
+        styles: { bold: true },
+      };
 
-      const titleDateNodes = article.lawSourceUrl
+      const titleContent = article.lawSourceUrl
         ? [
             {
               type: 'link' as const,
               href: article.lawSourceUrl,
-              content: titleDateContent,
+              content: [titleNode],
             },
           ]
-        : titleDateContent;
+        : [titleNode];
+
+      const dateLabel = article.lawDate
+        ? `Promulgué le ${formatLawDate(article.lawDate)}`
+        : '';
+
+      // "En vigueur" only means something as of today, so it's shown with
+      // today's date rather than as a static label.
+      const statusLabel = article.lawInForce
+        ? `${article.lawStatus} au ${formatFrenchDate(new Date())}`
+        : article.lawStatus;
+
+      // The status (eg. "En vigueur au 17 septembre 2026") gets its own blue
+      // text node, distinct from the date, so it reads as a status
+      // indicator rather than plain text.
+      const dateStatusContent = [
+        ...(dateLabel
+          ? [{ type: 'text' as const, text: dateLabel, styles: {} }]
+          : []),
+        ...(dateLabel && statusLabel
+          ? [{ type: 'text' as const, text: ' - ', styles: {} }]
+          : []),
+        ...(statusLabel
+          ? [
+              {
+                type: 'text' as const,
+                text: statusLabel,
+                styles: { textColor: 'blue' as const },
+              },
+            ]
+          : []),
+      ];
 
       (editor as DocsBlockNoteEditor).insertBlocks(
         [
@@ -243,8 +274,18 @@ export const LawSearchPage = ({
             type: 'callout',
             props: { backgroundColor: 'gray', emoji: '⚖️' },
             content: [
-              ...titleDateNodes,
-              { type: 'text', text: `\n\n${article.lawText}`, styles: {} },
+              ...titleContent,
+              ...(dateStatusContent.length
+                ? [
+                    { type: 'text' as const, text: '\n\n', styles: {} },
+                    ...dateStatusContent,
+                  ]
+                : []),
+              {
+                type: 'text',
+                text: `\n\n${article.lawText}`,
+                styles: { italic: true },
+              },
             ],
           },
         ],
@@ -289,7 +330,7 @@ export const LawSearchPage = ({
   return (
     <Box as="span" $position="relative">
       <Popover
-        position="bottom"
+        position="bottom-start"
         opened={popoverOpened}
         withinPortal={true}
         hideDetached={false}
@@ -347,10 +388,10 @@ export const LawSearchPage = ({
             $css={css`
               position: relative;
 
-              .mantine-Popover-dropdown[data-position='bottom'] & {
+              .mantine-Popover-dropdown[data-position='bottom-start'] & {
                 top: -10px;
               }
-              .mantine-Popover-dropdown[data-position='top'] & {
+              .mantine-Popover-dropdown[data-position='top-start'] & {
                 top: 10px;
               }
             `}
@@ -371,7 +412,7 @@ export const LawSearchPage = ({
                   );
                   overflow: hidden;
                 `}
-                $margin="sm"
+                $margin={{ vertical: 'sm' }}
                 $padding="none"
               >
                 <Box

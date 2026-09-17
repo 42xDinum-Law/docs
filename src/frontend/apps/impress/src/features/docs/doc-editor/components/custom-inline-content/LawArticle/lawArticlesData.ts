@@ -8,6 +8,10 @@ export type LawArticleResult = {
   lawSourceUrl: string;
   lawDate: string;
   lawStatus: string;
+  // Whether the article is currently in force (raw metadata status ===
+  // "VIGUEUR"), used to show "En vigueur au {today}" instead of the static
+  // "En vigueur" label, since that status is only meaningful as of "now".
+  lawInForce: boolean;
   // AI-generated summary of `lawText` (see `AlbertApiClient._summarize_all`
   // on the backend), capped at ~80 characters for the dropdown preview.
   // Undefined if the backend couldn't generate one.
@@ -72,6 +76,7 @@ const STATUS_LABELS: Record<string, string> = {
   ABROGE: 'Abrogé',
   MODIFIE: 'Modifié',
 };
+const STATUS_IN_FORCE = 'VIGUEUR';
 
 /**
  * Returns just the first sentence of `text` (up to and including the first
@@ -148,6 +153,7 @@ export const parseLawApiResult = (result: LawApiResult): LawArticleResult => {
     lawSourceUrl: buildLegifranceUrl(getMetadataString(metadata, '_doc_id')),
     lawDate: getMetadataString(metadata, 'start_date') ?? '',
     lawStatus: status ? (STATUS_LABELS[status] ?? status) : '',
+    lawInForce: status === STATUS_IN_FORCE,
     lawSummary: result.summary ?? undefined,
     lawCategory: getMetadataString(metadata, 'category') ?? '',
   };
